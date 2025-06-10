@@ -1,0 +1,445 @@
+/* Birzeit Flat Rent CSS - COMP 334 Project */
+/* Color Scheme: #4CAF50 (primary), #333333 (secondary), #F8F9FA (background), #FFFFFF (white), #E0E0E0 (highlight), #D32F2F (error) */
+
+/* General Reset */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+/* Body Styling */
+body {
+    font-family: Arial, Helvetica, sans-serif;
+    background-color: #F8F9FA;
+    color: #333333;
+    line-height: 1.6;
+}
+
+/* Page Layout */
+body {
+    display: grid;
+    grid-template-areas:
+        "header header"
+        "nav main"
+        "footer footer";
+    grid-template-rows: auto 1fr auto;
+    grid-template-columns: 15% 85%;
+    min-height: 100vh;
+}
+
+/* Header Section */
+header {
+    grid-area: header;
+    background-color: #333333;
+    color: #FFFFFF;
+    padding: 10px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-family: Georgia, serif; /* Distinct font for header */
+}
+
+header h1 {
+    font-size: 1.8em;
+    color: #FFFFFF; /* Reverse color scheme */
+}
+
+.logo {
+    height: 50px;
+}
+
+.user-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.user-card img {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+}
+
+header a {
+    color: #FFFFFF;
+    text-decoration: none;
+    margin-left: 15px;
+    transition: color 0.3s ease;
+}
+
+header a:hover {
+    color: #4CAF50;
+}
+
+/* Navigation Section */
+nav {
+    grid-area: nav;
+    background-color: #F8F9FA;
+    padding: 20px;
+    border-right: 1px solid #ddd;
+    font-family: Verdana, sans-serif; /* Distinct font for nav */
+}
+
+nav a {
+    display: block;
+    padding: 10px;
+    margin: 5px 0;
+    color: #333333;
+    text-decoration: none;
+    transition: all 0.3s ease;
+    font-weight: normal;
+}
+
+nav a:hover {
+    background-color: #E0E0E0;
+    color: #4CAF50; /* Reverse color on hover */
+}
+
+nav a.active {
+    background-color: #4CAF50;
+    color: #FFFFFF;
+    font-weight: bold;
+}
+
+/* Main Section */
+main {
+    grid-area: main;
+    padding: 20px;
+    font-family: 'Times New Roman', Times, serif; /* Distinct font for main content */
+}
+
+/* Footer Section */
+footer {
+    grid-area: footer;
+    background-color: #333333;
+    color: #FFFFFF;
+    padding: 10px;
+    text-align: center;
+    font-family: Arial, sans-serif; /* Distinct font for footer */
+}
+
+footer img {
+    height: 30px;
+}
+
+footer a {
+    color: #4CAF50;
+    text-decoration: none;
+}
+
+footer a:hover {
+    text-decoration: underline;
+}
+
+/* Table Styling (Search, Rented Flats, Messages, Manager Inquire) */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    border: 1px solid #ddd;
+    margin-top: 20px;
+}
+
+th, td {
+    padding: 12px;
+    text-align: center;
+    border: 1px solid #ddd;
+}
+
+th {
+    background-color: #4CAF50;
+    color: #FFFFFF;
+    font-weight: bold;
+}
+
+th a {
+    color: #FFFFFF;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+}
+
+th a:hover {
+    text-decoration: underline;
+}
+
+/* Sorting Icons */
+th .sort-icon.asc::before {
+    content: '▲';
+    margin-right: 5px;
+}
+
+th .sort-icon.desc::before {
+    content: '▼';
+    margin-right: 5px;
+}
+
+/* Zebra Striping */
+tr:nth-child(even) {
+    background-color: #F2F2F2;
+}
+
+tr:nth-child(odd) {
+    background-color: #FFFFFF;
+}
+
+/* Row Hover */
+tr:hover {
+    background-color: #E0E0E0;
+}
+
+/* Flat Reference Button */
+.flat-ref-button {
+    display: inline-block;
+    padding: 5px 10px;
+    background-color: #007BFF;
+    color: #FFFFFF;
+    text-decoration: none;
+    border-radius: 4px;
+    transition: background-color 0.3s ease;
+}
+
+.flat-ref-button:hover {
+    background-color: #0056b3;
+}
+
+/* Rental Status Styling */
+.current {
+    background-color: #D4EDDA; /* Light green for current rentals */
+    font-weight: bold;
+}
+
+.past {
+    background-color: #F8D7DA; /* Light red for past rentals */
+    font-style: italic;
+}
+
+/* Unread Message Styling */
+.unread::before {
+    content: '🔔';
+    margin-right: 5px;
+}
+
+/* Search Page Layout */
+.search-page {
+    display: grid;
+    grid-template-rows: auto 1fr;
+    gap: 20px;
+}
+
+.search-form {
+    background-color: #FFFFFF;
+    padding: 15px;
+    border: 1px solid #ddd;
+    margin-bottom: 10px;
+}
+
+.search-form form {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.search-results {
+    overflow-x: auto;
+}
+
+/* Flat Detail Page - Flatcard */
+.flatcard {
+    display: flex;
+    gap: 20px;
+    margin: 20px 0;
+    flex-wrap: wrap;
+}
+
+.flatcard .photos {
+    flex: 1;
+    min-width: 300px;
+}
+
+.flatcard .description {
+    flex: 2;
+    min-width: 300px;
+    padding: 10px;
+    border: 1px solid #ddd; /* Box model: border */
+}
+
+.flatcard aside {
+    float: right;
+    width: 25%;
+    background-color: #F8F9FA;
+    padding: 10px;
+    border: 1px solid #ddd; /* Box model: border */
+    margin-left: 10px; /* Box model: margin */
+}
+
+/* Side Navigation on Flat Detail */
+.side-nav {
+    margin-top: 20px;
+}
+
+.side-nav a {
+    display: block;
+    padding: 10px;
+    margin: 5px 0;
+    background-color: #4CAF50;
+    color: #FFFFFF;
+    text-decoration: none;
+    border-radius: 4px;
+    transition: background-color 0.3s ease;
+}
+
+.side-nav a:hover {
+    background-color: #388E3C;
+}
+
+/* Form Styling */
+form {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-width: 600px;
+    margin: 0 auto;
+    padding: 15px;
+    background-color: #FFFFFF;
+    border: 1px solid #ddd; /* Box model: border */
+}
+
+label {
+    border: 2px solid #4CAF50; /* Bordered labels */
+    padding: 5px;
+    color: #333333;
+    display: inline-block;
+    margin-bottom: 5px;
+}
+
+input:required, select:required, textarea:required {
+    border-left: 4px solid #D32F2F; /* Required field indicator */
+}
+
+input:focus, select:focus, textarea:focus {
+    background-color: #E8F0FE; /* Background change on focus */
+    outline: none;
+}
+
+input, select, textarea {
+    padding: 8px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 1em;
+}
+
+button {
+    padding: 10px;
+    background-color: #4CAF50;
+    color: #FFFFFF;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+}
+
+button:hover {
+    background-color: #388E3C;
+}
+
+/* Image Styling */
+figure {
+    margin: 10px 0;
+    position: relative; /* Box model: position */
+}
+
+figure img {
+    max-width: 100%;
+    height: auto;
+    border: 2px solid transparent;
+    transition: border 0.3s ease;
+}
+
+figure img:hover {
+    border: 2px solid #4CAF50; /* Border on hover for clickable images */
+}
+
+figcaption {
+    text-align: center;
+    font-size: 0.9em;
+    color: #333333;
+    margin-top: 5px;
+}
+
+/* Link Styling */
+a {
+    color: #007BFF; /* Internal links */
+    text-decoration: underline;
+}
+
+a:hover {
+    color: #0056b3;
+}
+
+a:visited {
+    color: #0056b3;
+}
+
+/* External Links */
+a[href^="http"] {
+    color: #D81B60; /* External links */
+    text-decoration: none;
+}
+
+a[href^="http"]:hover {
+    color: #AD1457;
+    text-decoration: underline;
+}
+
+a[href^="http"]:visited {
+    color: #AD1457;
+}
+
+/* User Card Styling */
+.user-card {
+    border: 2px solid #007BFF; /* Customer border */
+    padding: 15px; /* Box model: padding */
+    background-color: #F8F9FA;
+    max-width: 300px;
+    margin: 20px auto;
+}
+
+.user-card.owner {
+    border-color: #28A745; /* Owner border */
+}
+
+.user-card img {
+    display: block;
+    margin: 0 auto 10px;
+}
+
+/* Unordered Lists */
+ul {
+    list-style-image: url('../images/bullet.png'); /* Custom bullet image */
+    margin: 10px 0;
+    padding-left: 20px;
+}
+
+ul ul {
+    list-style-image: url('../images/sub-bullet.png'); /* Different bullet for nested lists */
+}
+
+/* About Us Sections */
+section {
+    margin: 20px 0;
+    padding: 15px;
+    border: 1px solid #ddd; /* Box model: border */
+}
+
+section h3 {
+    color: #4CAF50;
+    margin-bottom: 10px;
+}
+
+/* Error Messages */
+.error {
+    color: #D32F2F;
+    font-weight: bold;
+    margin-bottom: 10px;
+}
