@@ -24,12 +24,11 @@ if (!$user) {
 ?>
 
 <main>
-    <div class="user-card <?php echo $user['role']; ?>" style="border: 2px solid <?php echo $user['role'] === 'customer' ? '#007BFF' : '#28A745'; ?>; padding: 20px; background-color: #f8f9fa;">
-        <h2><?php echo htmlspecialchars($user['name']); ?></h2>
-        <p><strong>City:</strong> <?php echo htmlspecialchars($user['city']); ?></p>
-        <p><strong>Phone:</strong> <span style="margin-right: 5px;">📞</span><?php echo htmlspecialchars($user['mobile']); ?></p>
-        <p><strong>Email:</strong> <span style="margin-right: 5px;">📧</span><a href="mailto:<?php echo htmlspecialchars($user['email']); ?>"><?php echo htmlspecialchars($user['email']); ?></a></p>
+    <div class="user-card <?php echo $user['role']; ?>">
+        <h2><?php echo HtmlSpecialChars($user['name']); ?></h2>
+        <p><strong>City:</strong> <?php echo HtmlSpecialChars($user['city']); ?></p>
+        <p><strong>Phone:</strong> <span class="phone-icon">📞</span><?php echo HtmlSpecialChars($user['mobile']); ?></p>
+        <p><strong>Email:</strong> <span class="email-icon">📧</span><a href="mailto:<?php echo HtmlSpecialChars($user['email']); ?>" class="external-link"><?php echo HtmlSpecialChars($user['email']); ?></a></p>
     </div>
 </main>
-
 <?php require_once '../includes/footer.php'; ?>

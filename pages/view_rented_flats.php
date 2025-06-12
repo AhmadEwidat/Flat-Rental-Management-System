@@ -27,6 +27,7 @@ if ($_SESSION['role'] === 'customer') {
     }
 }
 
+// Get sort parameters
 $sort_column = $_GET['sort'] ?? (isset($_COOKIE['sort_column']) ? $_COOKIE['sort_column'] : 'start_date');
 $sort_order = $_GET['order'] ?? (isset($_COOKIE['sort_order']) ? $_COOKIE['sort_order'] : 'DESC');
 $sort_order = strtoupper($sort_order) === 'DESC' ? 'DESC' : 'ASC';
@@ -35,7 +36,7 @@ $next_order = $sort_order === 'ASC' ? 'DESC' : 'ASC';
 setcookie('sort_column', $sort_column, time() + (7 * 24 * 60 * 60), '/');
 setcookie('sort_order', $sort_order, time() + (7 * 24 * 60 * 60), '/');
 
-$valid_columns = ['ref_number', 'monthly_rent', 'start_date', 'end_date', 'location', 'owner_name'];
+$valid_columns = ['ref_number', 'f.monthly_rent', 'start_date', 'end_date', 'location', 'owner_name'];
 $sort_column = in_array($sort_column, $valid_columns) ? $sort_column : 'start_date';
 
 $query = "SELECT r.*, f.ref_number, f.monthly_rent, f.location, o.name AS owner_name, o.owner_id 
@@ -57,23 +58,55 @@ $rentals = $stmt->fetchAll(PDO::FETCH_ASSOC);
     <table>
         <thead>
             <tr>
-                <th><a href="?sort=ref_number&order=<?php echo $sort_column === 'ref_number' ? $next_order : 'ASC'; ?>" class="sort-icon <?php echo $sort_column === 'ref_number' ? strtolower($sort_order) : ''; ?>">Flat Reference</a></th>
-                <th><a href="?sort=monthly_rent&order=<?php echo $sort_column === 'monthly_rent' ? $next_order : 'ASC'; ?>" class="sort-icon <?php echo $sort_column === 'monthly_rent' ? strtolower($sort_order) : ''; ?>">Monthly Rent</a></th>
-                <th><a href="?sort=start_date&order=<?php echo $sort_column === 'start_date' ? $next_order : 'ASC'; ?>" class="sort-icon <?php echo $sort_column === 'start_date' ? strtolower($sort_order) : ''; ?>">Start Date</a></th>
-                <th><a href="?sort=end_date&order=<?php echo $sort_column === 'end_date' ? $next_order : 'ASC'; ?>" class="sort-icon <?php echo $sort_column === 'end_date' ? strtolower($sort_order) : ''; ?>">End Date</a></th>
-                <th><a href="?sort=location&order=<?php echo $sort_column === 'location' ? $next_order : 'ASC'; ?>" class="sort-icon <?php echo $sort_column === 'location' ? strtolower($sort_order) : ''; ?>">Location</a></th>
-                <th><a href="?sort=owner_name&order=<?php echo $sort_column === 'owner_name' ? $next_order : 'ASC'; ?>" class="sort-icon <?php echo $sort_column === 'owner_name' ? strtolower($sort_order) : ''; ?>">Owner</a></th>
+                <th class="sortable <?php echo $sort_column === 'ref_number' ? strtolower($sort_order) : ''; ?>">
+                    <a href="?sort=ref_number&order=<?php echo $sort_column === 'ref_number' ? $next_order : 'ASC'; ?>">
+                        Flat Reference
+                    </a>
+                </th>
+                <th class="sortable <?php echo $sort_column === 'monthly_rent' ? strtolower($sort_order) : ''; ?>">
+                    <a href="?sort=monthly_rent&order=<?php echo $sort_column === 'monthly_rent' ? $next_order : 'ASC'; ?>">
+                        Monthly Rent
+                    </a>
+                </th>
+                <th class="sortable <?php echo $sort_column === 'start_date' ? strtolower($sort_order) : ''; ?>">
+                    <a href="?sort=start_date&order=<?php echo $sort_column === 'start_date' ? $next_order : 'ASC'; ?>">
+                        Start Date
+                    </a>
+                </th>
+                <th class="sortable <?php echo $sort_column === 'end_date' ? strtolower($sort_order) : ''; ?>">
+                    <a href="?sort=end_date&order=<?php echo $sort_column === 'end_date' ? $next_order : 'ASC'; ?>">
+                        End Date
+                    </a>
+                </th>
+                <th class="sortable <?php echo $sort_column === 'location' ? strtolower($sort_order) : ''; ?>">
+                    <a href="?sort=location&order=<?php echo $sort_column === 'location' ? $next_order : 'ASC'; ?>">
+                        Location
+                    </a>
+                </th>
+                <th class="sortable <?php echo $sort_column === 'owner_name' ? strtolower($sort_order) : ''; ?>">
+                    <a href="?sort=owner_name&order=<?php echo $sort_column === 'owner_name' ? $next_order : 'ASC'; ?>">
+                        Owner
+                    </a>
+                </th>
             </tr>
         </thead>
         <tbody>
             <?php foreach ($rentals as $rental): ?>
                 <tr class="<?php echo $rental['end_date'] >= date('Y-m-d') ? 'current' : 'past'; ?>">
-                    <td><a href="flat_detail.php?id=<?php echo $rental['flat_id']; ?>" class="flat-ref-button" target="_blank"><?php echo htmlspecialchars($rental['ref_number']); ?></a></td>
-                    <td><?php echo htmlspecialchars($rental['monthly_rent']); ?></td>
-                    <td><?php echo htmlspecialchars($rental['start_date']); ?></td>
-                    <td><?php echo htmlspecialchars($rental['end_date']); ?></td>
+                    <td class="text-center">
+                        <a href="flat_detail.php?id=<?php echo $rental['flat_id']; ?>" class="flat-ref-button" target="_blank">
+                            <?php echo htmlspecialchars($rental['ref_number']); ?>
+                        </a>
+                    </td>
+                    <td class="text-right">$<?php echo number_format($rental['monthly_rent'], 2); ?></td>
+                    <td class="text-center"><?php echo date('Y-m-d', strtotime($rental['start_date'])); ?></td>
+                    <td class="text-center"><?php echo date('Y-m-d', strtotime($rental['end_date'])); ?></td>
                     <td><?php echo htmlspecialchars($rental['location']); ?></td>
-                    <td><a href="user_card.php?id=<?php echo $rental['owner_id']; ?>" target="_blank"><?php echo htmlspecialchars($rental['owner_name']); ?></a></td>
+                    <td>
+                        <a href="user_card.php?id=<?php echo $rental['owner_id']; ?>" target="_blank">
+                            <?php echo htmlspecialchars($rental['owner_name']); ?>
+                        </a>
+                    </td>
                 </tr>
             <?php endforeach; ?>
         </tbody>

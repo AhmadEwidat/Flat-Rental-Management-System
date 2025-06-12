@@ -2,22 +2,24 @@
 $current_page = basename($_SERVER['PHP_SELF']);
 $nav_links = [
     'customer' => [
-        'search.php' => 'Search Flats',
-        'view_rented_flats.php' => 'View Rented Flats',
-        'view_messages.php' => 'View Messages'
+        '/AhmadEwidat1212596/pages/search.php' => 'Search Flats',
+        '/AhmadEwidat1212596/pages/view_rented_flats.php' => 'View Rented Flats',
+        '/AhmadEwidat1212596/pages/view_messages.php' => 'View Messages'
     ],
     'owner' => [
-        'offer_flat.php' => 'Offer Flat',
-        'view_rented_flats.php' => 'View Rented Flats',
-        'view_messages.php' => 'View Messages'
-    ],
-    'manager' => [
-        'manager_inquire.php' => 'Inquire Flats',
-        'view_messages.php' => 'View Messages'
-    ],
+    '/AhmadEwidat1212596/pages/offer_flat.php' => 'Offer Flat',
+    '/AhmadEwidat1212596/pages/view_rented_flats.php' => 'View Rented Flats',
+    '/AhmadEwidat1212596/pages/manage_previews.php' => 'Manage Previews',
+    '/AhmadEwidat1212596/pages/view_messages.php' => 'View Messages'
+],
+  'manager' => [
+    '/AhmadEwidat1212596/pages/manager_inquire.php' => 'Inquire Flats',
+    '/AhmadEwidat1212596/pages/approve_flats.php' => 'Approve Flats',
+    '/AhmadEwidat1212596/pages/view_messages.php' => 'View Messages'
+],
     'guest' => [
-        'search.php' => 'Search Flats',
-        'about_us.php' => 'About Us'
+        '/AhmadEwidat1212596/pages/search.php' => 'Search Flats',
+        '/AhmadEwidat1212596/pages/about_us.php' => 'About Us'
     ]
 ];
 $role = $_SESSION['role'] ?? 'guest';

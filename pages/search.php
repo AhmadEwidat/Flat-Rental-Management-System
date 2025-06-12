@@ -3,108 +3,131 @@ require_once '../includes/dbconfig.inc.php';
 require_once '../includes/header.php';
 require_once '../includes/nav.php';
 
-// Handle sorting
-$sort_column = $_GET['sort'] ?? (isset($_COOKIE['sort_column']) ? $_COOKIE['sort_column'] : 'monthly_rent');
-$sort_order = $_GET['order'] ?? (isset($_COOKIE['sort_order']) ? $_COOKIE['sort_order'] : 'ASC');
-$sort_order = strtoupper($sort_order) === 'DESC' ? 'DESC' : 'ASC';
-$next_order = $sort_order === 'ASC' ? 'DESC' : 'ASC';
-
-// Store sorting preferences in cookies
-setcookie('sort_column', $sort_column, time() + (7 * 24 * 60 * 60), '/');
-setcookie('sort_order', $sort_order, time() + (7 * 24 * 60 * 60), '/');
-
-$valid_columns = ['ref_number', 'monthly_rent', 'available_from', 'location', 'bedrooms'];
+// Initialize sorting and cookies
+$sort_column = $_GET['sort'] ?? 'monthly_rent';
+$sort_order = $_GET['order'] ?? 'ASC';
+$valid_columns = ['monthly_rent', 'bedrooms', 'bathrooms', 'size_sqm', 'location'];
 $sort_column = in_array($sort_column, $valid_columns) ? $sort_column : 'monthly_rent';
+$sort_order = strtoupper($sort_order) === 'DESC' ? 'DESC' : 'ASC';
 
-$filters = [
-    'price_min' => $_GET['price_min'] ?? '',
-    'price_max' => $_GET['price_max'] ?? '',
-    'location' => $_GET['location'] ?? '',
-    'bedrooms' => $_GET['bedrooms'] ?? '',
-    'bathrooms' => $_GET['bathrooms'] ?? '',
-    'is_furnished' => $_GET['is_furnished'] ?? ''
-];
+// Save sorting preference in cookie
+setcookie('sort_column', $sort_column, time() + (86400 * 30), "/");
+setcookie('sort_order', $sort_order, time() + (86400 * 30), "/");
 
-$query = "SELECT f.flat_id, f.ref_number, f.monthly_rent, f.available_from, f.location, f.bedrooms, fp.photo_url 
-          FROM flats f 
-          LEFT JOIN flat_photos fp ON f.flat_id = fp.flat_id 
-          WHERE f.status = 'approved' AND (f.available_to IS NULL OR f.available_to >= CURDATE())";
-$params = [];
+// Build query conditions
+$conditions = ['f.status = :status'];
+$params = [':status' => 'approved'];
 
-if ($filters['price_min']) {
-    $query .= " AND f.monthly_rent >= ?";
-    $params[] = $filters['price_min'];
-}
-if ($filters['price_max']) {
-    $query .= " AND f.monthly_rent <= ?";
-    $params[] = $filters['price_max'];
-}
-if ($filters['location']) {
-    $query .= " AND f.location LIKE ?";
-    $params[] = "%{$filters['location']}%";
-}
-if ($filters['bedrooms']) {
-    $query .= " AND f.bedrooms = ?";
-    $params[] = $filters['bedrooms'];
-}
-if ($filters['bathrooms']) {
-    $query .= " AND f.bathrooms = ?";
-    $params[] = $filters['bathrooms'];
-}
-if ($filters['is_furnished'] !== '') {
-    $query .= " AND f.is_furnished = ?";
-    $params[] = $filters['is_furnished'];
+if (!empty($_GET['location'])) {
+    $conditions[] = 'f.location LIKE :location';
+    $params[':location'] = '%' . $_GET['location'] . '%';
 }
 
-$query .= " ORDER BY f.$sort_column $sort_order";
-$stmt = $pdo->prepare($query);
+if (!empty($_GET['min_rent'])) {
+    $conditions[] = 'f.monthly_rent >= :min_rent';
+    $params[':min_rent'] = (float)$_GET['min_rent'];
+}
+
+if (!empty($_GET['max_rent'])) {
+    $conditions[] = 'f.monthly_rent <= :max_rent';
+    $params[':max_rent'] = (float)$_GET['max_rent'];
+}
+
+if (!empty($_GET['bedrooms'])) {
+    $conditions[] = 'f.bedrooms = :bedrooms';
+    $params[':bedrooms'] = (int)$_GET['bedrooms'];
+}
+
+if (isset($_GET['is_furnished']) && $_GET['is_furnished'] !== '') {
+    $conditions[] = 'f.is_furnished = :is_furnished';
+    $params[':is_furnished'] = (int)$_GET['is_furnished'];
+}
+
+// Build query
+$sql = "SELECT f.*, o.name AS owner_name 
+        FROM flats f 
+        JOIN owners o ON f.owner_id = o.owner_id 
+        WHERE " . implode(' AND ', $conditions) . 
+        " ORDER BY $sort_column $sort_order";
+$stmt = $pdo->prepare($sql);
 $stmt->execute($params);
 $flats = $stmt->fetchAll(PDO::FETCH_ASSOC);
 ?>
 
-<main>
-    <section class="search-page" style="display: grid; grid-template-rows: auto 1fr;">
-        <div class="search-form">
-            <form method="GET">
-                <input type="number" name="price_min" placeholder="Min Price" value="<?php echo htmlspecialchars($filters['price_min']); ?>">
-                <input type="number" name="price_max" placeholder="Max Price" value="<?php echo htmlspecialchars($filters['price_max']); ?>">
-                <input type="text" name="location" placeholder="Location" value="<?php echo htmlspecialchars($filters['location']); ?>">
-                <input type="number" name="bedrooms" placeholder="Bedrooms" value="<?php echo htmlspecialchars($filters['bedrooms']); ?>">
-                <input type="number" name="bathrooms" placeholder="Bathrooms" value="<?php echo htmlspecialchars($filters['bathrooms']); ?>">
-                <select name="is_furnished">
-                    <option value="">Furnished?</option>
-                    <option value="1" <?php echo $filters['is_furnished'] === '1' ? 'selected' : ''; ?>>Yes</option>
-                    <option value="0" <?php echo $filters['is_furnished'] === '0' ? 'selected' : ''; ?>>No</option>
-                </select>
-                <button type="submit">Search</button>
-            </form>
-        </div>
-        <div class="search-results">
+<main class="search-page">
+    <h2>Search Flats</h2>
+    <section class="search-form">
+        <form method="GET">
+            <label>Location<input type="text" name="location" value="<?php echo htmlspecialchars($_GET['location'] ?? ''); ?>"></label>
+            <label>Min Rent<input type="number" name="min_rent" value="<?php echo htmlspecialchars($_GET['min_rent'] ?? ''); ?>" step="100"></label>
+            <label>Max Rent<input type="number" name="max_rent" value="<?php echo htmlspecialchars($_GET['max_rent'] ?? ''); ?>" step="100"></label>
+            <label>Bedrooms<select name="bedrooms">
+                <option value="">Any</option>
+                <option value="1" <?php echo ($_GET['bedrooms'] ?? '') == '1' ? 'selected' : ''; ?>>1</option>
+                <option value="2" <?php echo ($_GET['bedrooms'] ?? '') == '2' ? 'selected' : ''; ?>>2</option>
+                <option value="3" <?php echo ($_GET['bedrooms'] ?? '') == '3' ? 'selected' : ''; ?>>3+</option>
+            </select></label>
+            <label>Furnished<select name="is_furnished">
+                <option value="">Any</option>
+                <option value="1" <?php echo ($_GET['is_furnished'] ?? '') == '1' ? 'selected' : ''; ?>>Yes</option>
+                <option value="0" <?php echo ($_GET['is_furnished'] ?? '') == '0' ? 'selected' : ''; ?>>No</option>
+            </select></label>
+            <button type="submit">Search</button>
+        </form>
+    </section>
+    <section class="search-results">
+        <?php if (empty($flats)): ?>
+            <p>No flats found.</p>
+        <?php else: ?>
             <table>
                 <thead>
                     <tr>
-                        <th><a href="?sort=ref_number&order=<?php echo $sort_column === 'ref_number' ? $next_order : 'ASC'; ?>" class="sort-icon <?php echo $sort_column === 'ref_number' ? strtolower($sort_order) : ''; ?>">Flat Reference</a></th>
-                        <th><a href="?sort=monthly_rent&order=<?php echo $sort_column === 'monthly_rent' ? $next_order : 'ASC'; ?>" class="sort-icon <?php echo $sort_column === 'monthly_rent' ? strtolower($sort_order) : ''; ?>">Monthly Rent</a></th>
-                        <th><a href="?sort=available_from&order=<?php echo $sort_column === 'available_from' ? $next_order : 'ASC'; ?>" class="sort-icon <?php echo $sort_column === 'available_from' ? strtolower($sort_order) : ''; ?>">Available From</a></th>
-                        <th><a href="?sort=location&order=<?php echo $sort_column === 'location' ? $next_order : 'ASC'; ?>" class="sort-icon <?php echo $sort_column === 'location' ? strtolower($sort_order) : ''; ?>">Location</a></th>
-                        <th><a href="?sort=bedrooms&order=<?php echo $sort_column === 'bedrooms' ? $next_order : 'ASC'; ?>" class="sort-icon <?php echo $sort_column === 'bedrooms' ? strtolower($sort_order) : ''; ?>">Bedrooms</a></th>
-                        <th>Photo</th>
+                        <th class="sortable <?php echo $sort_column === 'location' ? strtolower($sort_order) : ''; ?>">
+                            <a href="?<?php echo http_build_query(array_merge($_GET, ['sort' => 'location', 'order' => $sort_column === 'location' && $sort_order === 'ASC' ? 'DESC' : 'ASC'])); ?>">
+                                Location
+                            </a>
+                        </th>
+                        <th class="sortable <?php echo $sort_column === 'monthly_rent' ? strtolower($sort_order) : ''; ?>">
+                            <a href="?<?php echo http_build_query(array_merge($_GET, ['sort' => 'monthly_rent', 'order' => $sort_column === 'monthly_rent' && $sort_order === 'ASC' ? 'DESC' : 'ASC'])); ?>">
+                                Rent
+                            </a>
+                        </th>
+                        <th class="sortable <?php echo $sort_column === 'bedrooms' ? strtolower($sort_order) : ''; ?>">
+                            <a href="?<?php echo http_build_query(array_merge($_GET, ['sort' => 'bedrooms', 'order' => $sort_column === 'bedrooms' && $sort_order === 'ASC' ? 'DESC' : 'ASC'])); ?>">
+                                Bedrooms
+                            </a>
+                        </th>
+                        <th class="sortable <?php echo $sort_column === 'bathrooms' ? strtolower($sort_order) : ''; ?>">
+                            <a href="?<?php echo http_build_query(array_merge($_GET, ['sort' => 'bathrooms', 'order' => $sort_column === 'bathrooms' && $sort_order === 'ASC' ? 'DESC' : 'ASC'])); ?>">
+                                Bathrooms
+                            </a>
+                        </th>
+                        <th class="sortable <?php echo $sort_column === 'size_sqm' ? strtolower($sort_order) : ''; ?>">
+                            <a href="?<?php echo http_build_query(array_merge($_GET, ['sort' => 'size_sqm', 'order' => $sort_column === 'size_sqm' && $sort_order === 'ASC' ? 'DESC' : 'ASC'])); ?>">
+                                Size (sqm)
+                            </a>
+                        </th>
+                        <th>Owner</th>
+                        <th>Furnished</th>
+                        <th>Action</th>
                     </tr>
                 </thead>
                 <tbody>
                     <?php foreach ($flats as $flat): ?>
                         <tr>
-                            <td><a href="flat_detail.php?id=<?php echo $flat['flat_id']; ?>" class="flat-ref-button" target="_blank"><?php echo htmlspecialchars($flat['ref_number']); ?></a></td>
-                            <td><?php echo htmlspecialchars($flat['monthly_rent']); ?></td>
-                            <td><?php echo htmlspecialchars($flat['available_from']); ?></td>
                             <td><?php echo htmlspecialchars($flat['location']); ?></td>
-                            <td><?php echo htmlspecialchars($flat['bedrooms']); ?></td>
-                            <td><a href="flat_detail.php?id=<?php echo $flat['flat_id']; ?>" target="_blank"><img src="<?php echo htmlspecialchars($flat['photo_url'] ?? '../assets/images/placeholder.jpg'); ?>" alt="Flat Photo" width="100"></a></td>
+                            <td class="text-right">$<?php echo number_format($flat['monthly_rent'], 2); ?></td>
+                            <td class="text-center"><?php echo $flat['bedrooms']; ?></td>
+                            <td class="text-center"><?php echo $flat['bathrooms']; ?></td>
+                            <td class="text-right"><?php echo $flat['size_sqm']; ?></td>
+                            <td><a href="user_card.php?id=<?php echo $flat['owner_id']; ?>" target="_blank"><?php echo htmlspecialchars($flat['owner_name']); ?></a></td>
+                            <td class="text-center"><?php echo $flat['is_furnished'] ? 'Yes' : 'No'; ?></td>
+                            <td class="text-center"><a href="flat_detail.php?id=<?php echo $flat['flat_id']; ?>" class="flat-ref-button"><?php echo htmlspecialchars($flat['ref_number']); ?></a></td>
                         </tr>
                     <?php endforeach; ?>
                 </tbody>
             </table>
-        </div>
+        <?php endif; ?>
     </section>
 </main>
 

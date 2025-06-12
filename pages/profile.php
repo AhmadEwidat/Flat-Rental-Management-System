@@ -3,70 +3,208 @@ require_once '../includes/dbconfig.inc.php';
 require_once '../includes/header.php';
 require_once '../includes/nav.php';
 
+// Check if user is logged in
 if (!isset($_SESSION['user_id'])) {
-    header('Location: login.php');
+    header("Location: login.php");
     exit;
 }
 
-// Get user details
-$user = null;
-$user_id = null;
-$table = $_SESSION['role'] === 'customer' ? 'customers' : 'owners';
-$id_field = $_SESSION['role'] === 'customer' ? 'customer_id' : 'owner_id';
+$user_id = $_SESSION['user_id'];
+$role = $_SESSION['role'];
 
-$stmt = $pdo->prepare("SELECT c.*, u.user_id FROM $table c JOIN users u ON c.user_id = u.user_id WHERE u.user_id = :user_id");
-$stmt->execute(['user_id' => $_SESSION['user_id']]);
+// Get user information based on role
+if ($role === 'customer') {
+    $stmt = $pdo->prepare("
+        SELECT c.*, u.email 
+        FROM customers c 
+        JOIN users u ON c.user_id = u.user_id 
+        WHERE c.user_id = ?
+    ");
+} else {
+    $stmt = $pdo->prepare("
+        SELECT o.*, u.email 
+        FROM owners o 
+        JOIN users u ON o.user_id = u.user_id 
+        WHERE o.user_id = ?
+    ");
+}
+$stmt->execute([$user_id]);
 $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
-if (!$user) {
-    die("User not found.");
-}
-$user_id = $user[$id_field];
-
+// Handle form submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $stmt = $pdo->prepare("UPDATE $table SET name = :name, flat_number = :flat_number, street_name = :street_name, city = :city, postal_code = :postal_code, dob = :dob, mobile = :mobile, telephone = :telephone, email = :email WHERE $id_field = :user_id");
-    $stmt->execute([
-        'name' => $_POST['name'],
-        'flat_number' => $_POST['flat_number'],
-        'street_name' => $_POST['street_name'],
-        'city' => $_POST['city'],
-        'postal_code' => $_POST['postal_code'],
-        'dob' => $_POST['dob'],
-        'mobile' => $_POST['mobile'],
-        'telephone' => $_POST['telephone'] ?? null,
-        'email' => $_POST['email'],
-        'user_id' => $user_id
-    ]);
+    try {
+        $pdo->beginTransaction();
 
-    // Update users table email
-    $stmt = $pdo->prepare("UPDATE users SET email = :email WHERE user_id = :user_id");
-    $stmt->execute([
-        'email' => $_POST['email'],
-        'user_id' => $_SESSION['user_id']
-    ]);
+        // Update user information based on role
+        if ($role === 'customer') {
+            $stmt = $pdo->prepare("
+                UPDATE customers 
+                SET name = ?, mobile = ?, telephone = ?, 
+                    flat_number = ?, street_name = ?, city = ?, postal_code = ?
+                WHERE user_id = ?
+            ");
+            $stmt->execute([
+                $_POST['name'],
+                $_POST['mobile'],
+                $_POST['telephone'],
+                $_POST['flat_number'],
+                $_POST['street_name'],
+                $_POST['city'],
+                $_POST['postal_code'],
+                $user_id
+            ]);
+        } else {
+            $stmt = $pdo->prepare("
+                UPDATE owners 
+                SET name = ?, mobile = ?, telephone = ?, 
+                    flat_number = ?, street_name = ?, city = ?, postal_code = ?,
+                    bank_name = ?, bank_branch = ?, account_number = ?
+                WHERE user_id = ?
+            ");
+            $stmt->execute([
+                $_POST['name'],
+                $_POST['mobile'],
+                $_POST['telephone'],
+                $_POST['flat_number'],
+                $_POST['street_name'],
+                $_POST['city'],
+                $_POST['postal_code'],
+                $_POST['bank_name'],
+                $_POST['bank_branch'],
+                $_POST['account_number'],
+                $user_id
+            ]);
+        }
 
-    $_SESSION['user_name'] = $_POST['name'];
-    echo "<p>Profile updated successfully.</p>";
+        // Update email if changed
+        if ($_POST['email'] !== $user['email']) {
+            $stmt = $pdo->prepare("UPDATE users SET email = ? WHERE user_id = ?");
+            $stmt->execute([$_POST['email'], $user_id]);
+        }
+
+        // Update password if provided
+        if (!empty($_POST['new_password'])) {
+            if (!preg_match('/^\d.*[a-z]$/', $_POST['new_password']) || 
+                strlen($_POST['new_password']) < 6 || 
+                strlen($_POST['new_password']) > 15) {
+                throw new Exception("Password must start with a digit, end with a lowercase letter, and be 6-15 characters long");
+            }
+            if ($_POST['new_password'] !== $_POST['confirm_password']) {
+                throw new Exception("Passwords do not match");
+            }
+            $stmt = $pdo->prepare("UPDATE users SET password = ? WHERE user_id = ?");
+            $stmt->execute([password_hash($_POST['new_password'], PASSWORD_DEFAULT), $user_id]);
+        }
+
+        $pdo->commit();
+        $success = "Profile updated successfully";
+        
+        // Refresh user data
+        $stmt->execute([$user_id]);
+        $user = $stmt->fetch(PDO::FETCH_ASSOC);
+    } catch (Exception $e) {
+        $pdo->rollBack();
+        $error = $e->getMessage();
+    }
 }
 ?>
 
 <main>
-    <div class="user-card <?php echo $_SESSION['role']; ?>" style="border: 2px solid <?php echo $_SESSION['role'] === 'customer' ? '#007BFF' : '#28A745'; ?>; padding: 20px; background-color: #f8f9fa;">
-        <img src="../assets/images/user_photo.png" alt="User Photo">
-        <form method="POST">
-            <p><strong>User ID:</strong> <?php echo htmlspecialchars($user_id); ?></p>
-            <label>Name<input type="text" name="name" value="<?php echo htmlspecialchars($user['name']); ?>" required pattern="[A-Za-z\s]+"></label>
-            <label>Flat Number<input type="text" name="flat_number" value="<?php echo htmlspecialchars($user['flat_number']); ?>" required></label>
-            <label>Street Name<input type="text" name="street_name" value="<?php echo htmlspecialchars($user['street_name']); ?>" required></label>
-            <label>City<input type="text" name="city" value="<?php echo htmlspecialchars($user['city']); ?>" required></label>
-            <label>Postal Code<input type="text" name="postal_code" value="<?php echo htmlspecialchars($user['postal_code']); ?>" required></label>
-            <label>Date of Birth<input type="date" name="dob" value="<?php echo htmlspecialchars($user['dob']); ?>" required></label>
-            <label>Mobile Number<input type="tel" name="mobile" value="<?php echo htmlspecialchars($user['mobile']); ?>" required></label>
-            <label>Telephone Number<input type="tel" name="telephone" value="<?php echo htmlspecialchars($user['telephone']); ?>"></label>
-            <label>Email<input type="email" name="email" value="<?php echo htmlspecialchars($user['email']); ?>" required></label>
-            <button type="submit">Update Profile</button>
-        </form>
-    </div>
+    <h1>Profile</h1>
+    
+    <?php if (isset($success)): ?>
+        <div class="success-message"><?php echo htmlspecialchars($success); ?></div>
+    <?php endif; ?>
+    
+    <?php if (isset($error)): ?>
+        <div class="error-message"><?php echo htmlspecialchars($error); ?></div>
+    <?php endif; ?>
+
+    <form method="POST" class="profile-form">
+        <div class="form-group">
+            <label for="name" class="required">Full Name</label>
+            <input type="text" id="name" name="name" required 
+                   value="<?php echo htmlspecialchars($user['name']); ?>">
+        </div>
+
+        <div class="form-group">
+            <label for="email" class="required">Email</label>
+            <input type="email" id="email" name="email" required 
+                   value="<?php echo htmlspecialchars($user['email']); ?>">
+        </div>
+
+        <div class="form-group">
+            <label for="mobile" class="required">Mobile Number</label>
+            <input type="tel" id="mobile" name="mobile" required 
+                   value="<?php echo htmlspecialchars($user['mobile']); ?>">
+        </div>
+
+        <div class="form-group">
+            <label for="telephone">Telephone Number</label>
+            <input type="tel" id="telephone" name="telephone" 
+                   value="<?php echo htmlspecialchars($user['telephone'] ?? ''); ?>">
+        </div>
+
+        <div class="form-group">
+            <label for="flat_number">Flat/House Number</label>
+            <input type="text" id="flat_number" name="flat_number" 
+                   value="<?php echo htmlspecialchars($user['flat_number']); ?>">
+        </div>
+
+        <div class="form-group">
+            <label for="street_name">Street Name</label>
+            <input type="text" id="street_name" name="street_name" 
+                   value="<?php echo htmlspecialchars($user['street_name']); ?>">
+        </div>
+
+        <div class="form-group">
+            <label for="city">City</label>
+            <input type="text" id="city" name="city" 
+                   value="<?php echo htmlspecialchars($user['city']); ?>">
+        </div>
+
+        <div class="form-group">
+            <label for="postal_code">Postal Code</label>
+            <input type="text" id="postal_code" name="postal_code" 
+                   value="<?php echo htmlspecialchars($user['postal_code']); ?>">
+        </div>
+
+        <?php if ($role === 'owner'): ?>
+            <div class="form-group">
+                <label for="bank_name">Bank Name</label>
+                <input type="text" id="bank_name" name="bank_name" 
+                       value="<?php echo htmlspecialchars($user['bank_name'] ?? ''); ?>">
+            </div>
+
+            <div class="form-group">
+                <label for="bank_branch">Bank Branch</label>
+                <input type="text" id="bank_branch" name="bank_branch" 
+                       value="<?php echo htmlspecialchars($user['bank_branch'] ?? ''); ?>">
+            </div>
+
+            <div class="form-group">
+                <label for="account_number">Account Number</label>
+                <input type="text" id="account_number" name="account_number" 
+                       value="<?php echo htmlspecialchars($user['account_number'] ?? ''); ?>">
+            </div>
+        <?php endif; ?>
+
+        <h2>Change Password</h2>
+        <div class="form-group">
+            <label for="new_password">New Password</label>
+            <input type="password" id="new_password" name="new_password" 
+                   pattern="^\d.*[a-z]$" minlength="6" maxlength="15"
+                   title="Password must start with a digit, end with a lowercase letter, and be 6-15 characters long">
+        </div>
+
+        <div class="form-group">
+            <label for="confirm_password">Confirm New Password</label>
+            <input type="password" id="confirm_password" name="confirm_password">
+        </div>
+
+        <button type="submit" class="submit-button">Update Profile</button>
+    </form>
 </main>
 
 <?php require_once '../includes/footer.php'; ?>

@@ -21,15 +21,31 @@ $step = $_GET['step'] ?? 1;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($step == 1) {
-        $_SESSION['flat_data'] = $_POST;
-        header('Location: offer_flat.php?step=2');
-        exit;
+        // Validate required fields
+        $required_fields = ['location', 'flat_number', 'street_name', 'city', 'postal_code', 
+                          'monthly_rent', 'available_from', 'bedrooms', 'bathrooms', 
+                          'size_sqm', 'backyard', 'rent_conditions'];
+        
+        $errors = [];
+        foreach ($required_fields as $field) {
+            if (!isset($_POST[$field]) || empty($_POST[$field])) {
+                $errors[] = ucfirst(str_replace('_', ' ', $field)) . " is required";
+            }
+        }
+
+        if (empty($errors)) {
+            $_SESSION['flat_data'] = $_POST;
+            header('Location: offer_flat.php?step=2');
+            exit;
+        } else {
+            $error_message = implode("<br>", $errors);
+        }
     } elseif ($step == 2) {
-        $_SESSION['flat_data']['marketing'] = $_POST['marketing'] ?? [];
+        $_SESSION['flat_data']['marketing'] = isset($_POST['marketing']) ? $_POST['marketing'] : [];
         header('Location: offer_flat.php?step=3');
         exit;
     } elseif ($step == 3) {
-        $_SESSION['flat_data']['viewing_times'] = $_POST['viewing_times'] ?? [];
+        $_SESSION['flat_data']['viewing_times'] = isset($_POST['viewing_times']) ? $_POST['viewing_times'] : [];
         $data = $_SESSION['flat_data'];
 
         // Generate unique 6-digit reference number
@@ -44,66 +60,133 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt->execute([
             'owner_id' => $owner_id,
             'ref_number' => $ref_number,
-            'location' => $data['location'],
-            'flat_number' => $data['flat_number'],
-            'street_name' => $data['street_name'],
-            'city' => $data['city'],
-            'postal_code' => $data['postal_code'],
-            'monthly_rent' => $data['monthly_rent'],
-            'available_from' => $data['available_from'],
+            'location' => $data['location'] ?? '',
+            'flat_number' => $data['flat_number'] ?? '',
+            'street_name' => $data['street_name'] ?? '',
+            'city' => $data['city'] ?? '',
+            'postal_code' => $data['postal_code'] ?? '',
+            'monthly_rent' => $data['monthly_rent'] ?? 0,
+            'available_from' => $data['available_from'] ?? null,
             'available_to' => $data['available_to'] ?? null,
-            'bedrooms' => $data['bedrooms'],
-            'bathrooms' => $data['bathrooms'],
-            'size_sqm' => $data['size_sqm'],
+            'bedrooms' => $data['bedrooms'] ?? 0,
+            'bathrooms' => $data['bathrooms'] ?? 0,
+            'size_sqm' => $data['size_sqm'] ?? 0,
             'is_furnished' => isset($data['is_furnished']) ? 1 : 0,
             'heating' => isset($data['heating']) ? 1 : 0,
             'air_conditioning' => isset($data['air_conditioning']) ? 1 : 0,
             'access_control' => isset($data['access_control']) ? 1 : 0,
             'parking' => isset($data['parking']) ? 1 : 0,
-            'backyard' => $data['backyard'],
+            'backyard' => $data['backyard'] ?? 'none',
             'playground' => isset($data['playground']) ? 1 : 0,
             'storage' => isset($data['storage']) ? 1 : 0,
-            'rent_conditions' => $data['rent_conditions']
+            'rent_conditions' => $data['rent_conditions'] ?? ''
         ]);
         $flat_id = $pdo->lastInsertId();
 
         // Insert photos
-        foreach ($_FILES['photos']['tmp_name'] as $index => $tmp_name) {
-            if ($tmp_name) {
-                $photo_url = "uploads/flat_" . $flat_id . "_" . $index . ".jpg";
-                move_uploaded_file($tmp_name, "../$photo_url");
-                $stmt = $pdo->prepare("INSERT INTO flat_photos (flat_id, photo_url) VALUES (:flat_id, :photo_url)");
-                $stmt->execute([
-                    'flat_id' => $flat_id,
-                    'photo_url' => $photo_url
-                ]);
+        if (isset($_FILES['photos']) && is_array($_FILES['photos']['tmp_name'])) {
+            // إنشاء مجلد uploads إذا لم يكن موجوداً
+            $upload_dir = "../assets/images";
+            if (!file_exists($upload_dir)) {
+                if (!mkdir($upload_dir, 0777, true)) {
+                    error_log("Failed to create directory: " . $upload_dir);
+                    die("Failed to create upload directory");
+                }
             }
+
+            // التأكد من صلاحيات المجلد
+            if (!is_writable($upload_dir)) {
+                error_log("Directory is not writable: " . $upload_dir);
+                die("Upload directory is not writable");
+            }
+
+            foreach ($_FILES['photos']['tmp_name'] as $index => $tmp_name) {
+                if ($tmp_name && $_FILES['photos']['error'][$index] === UPLOAD_ERR_OK) {
+                    // التحقق من نوع الملف
+                    $allowed_types = ['image/jpeg', 'image/png', 'image/gif'];
+                    $file_type = $_FILES['photos']['type'][$index];
+                    
+                    if (!in_array($file_type, $allowed_types)) {
+                        error_log("Invalid file type: " . $file_type);
+                        continue;
+                    }
+
+                    // إنشاء اسم فريد للملف
+                    $file_extension = strtolower(pathinfo($_FILES['photos']['name'][$index], PATHINFO_EXTENSION));
+                    $file_name = "flat_" . $flat_id . "_" . time() . "_" . $index . "." . $file_extension;
+                    $photo_url = "/AhmadEwidat1212596/assets/images/" . $file_name;
+                    $full_path = "../" . $photo_url;
+
+                    // محاولة نقل الملف
+                    if (move_uploaded_file($tmp_name, $full_path)) {
+                        try {
+                            // التحقق من وجود الصورة في قاعدة البيانات
+                            $check_stmt = $pdo->prepare("SELECT COUNT(*) FROM flat_photos WHERE flat_id = :flat_id AND photo_url = :photo_url");
+                            $check_stmt->execute([
+                                'flat_id' => $flat_id,
+                                'photo_url' => $photo_url
+                            ]);
+                            
+                            if ($check_stmt->fetchColumn() == 0) {
+                                // إضافة الصورة إلى قاعدة البيانات
+                                $stmt = $pdo->prepare("INSERT INTO flat_photos (flat_id, photo_url) VALUES (:flat_id, :photo_url)");
+                                $result = $stmt->execute([
+                                    'flat_id' => $flat_id,
+                                    'photo_url' => $photo_url
+                                ]);
+                                
+                                if (!$result) {
+                                    error_log("Failed to insert photo into database: " . print_r($stmt->errorInfo(), true));
+                                } else {
+                                    error_log("Successfully inserted photo: " . $photo_url);
+                                }
+                            } else {
+                                error_log("Photo already exists in database: " . $photo_url);
+                            }
+                        } catch (PDOException $e) {
+                            error_log("Database error while inserting photo: " . $e->getMessage());
+                        }
+                    } else {
+                        error_log("Failed to move uploaded file to: " . $full_path);
+                        error_log("Upload error details: " . print_r($_FILES['photos']['error'][$index], true));
+                    }
+                } else {
+                    error_log("File upload error: " . $_FILES['photos']['error'][$index]);
+                }
+            }
+        } else {
+            error_log("No photos were uploaded");
+            error_log("FILES array: " . print_r($_FILES, true));
         }
 
         // Insert marketing info
-        foreach ($data['marketing'] as $info) {
-            if ($info['title'] && $info['description']) {
-                $stmt = $pdo->prepare("INSERT INTO marketing_info (flat_id, title, description, url) VALUES (:flat_id, :title, :description, :url)");
-                $stmt->execute([
-                    'flat_id' => $flat_id,
-                    'title' => $info['title'],
-                    'description' => $info['description'],
-                    'url' => $info['url'] ?? null
-                ]);
+        if (isset($data['marketing']) && is_array($data['marketing'])) {
+            foreach ($data['marketing'] as $info) {
+                if (!empty($info['title']) && !empty($info['description'])) {
+                    $stmt = $pdo->prepare("INSERT INTO marketing_info (flat_id, title, description, url) VALUES (:flat_id, :title, :description, :url)");
+                    $stmt->execute([
+                        'flat_id' => $flat_id,
+                        'title' => $info['title'],
+                        'description' => $info['description'],
+                        'url' => $info['url'] ?? null
+                    ]);
+                }
             }
         }
 
         // Insert viewing times
-        foreach ($data['viewing_times'] as $time) {
-            if ($time['day_of_week'] && $time['time_from'] && $time['time_to'] && $time['phone_number']) {
-                $stmt = $pdo->prepare("INSERT INTO viewing_times (flat_id, day_of_week, time_from, time_to, phone_number) VALUES (:flat_id, :day_of_week, :time_from, :time_to, :phone_number)");
-                $stmt->execute([
-                    'flat_id' => $flat_id,
-                    'day_of_week' => $time['day_of_week'],
-                    'time_from' => $time['time_from'],
-                    'time_to' => $time['time_to'],
-                    'phone_number' => $time['phone_number']
-                ]);
+        if (isset($data['viewing_times']) && is_array($data['viewing_times'])) {
+            foreach ($data['viewing_times'] as $time) {
+                if (!empty($time['day_of_week']) && !empty($time['time_from']) && !empty($time['time_to']) && !empty($time['phone_number'])) {
+                    $stmt = $pdo->prepare("INSERT INTO viewing_times (flat_id, day_of_week, time_from, time_to, phone_number) VALUES (:flat_id, :day_of_week, :time_from, :time_to, :phone_number)");
+                    $stmt->execute([
+                        'flat_id' => $flat_id,
+                        'day_of_week' => $time['day_of_week'],
+                        'time_from' => $time['time_from'],
+                        'time_to' => $time['time_to'],
+                        'phone_number' => $time['phone_number']
+                    ]);
+                }
             }
         }
 
