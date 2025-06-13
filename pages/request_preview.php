@@ -84,31 +84,49 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!$valid_time) {
         $error = "Invalid viewing time selected.";
     } else {
-        // Check if customer already has a pending request for this flat
-        $stmt = $pdo->prepare("
-            SELECT COUNT(*) as pending_requests 
-            FROM preview_requests 
-            WHERE flat_id = :flat_id 
-            AND customer_id = :customer_id 
-            AND status = 'pending'
-        ");
-        $stmt->execute([
-            'flat_id' => $flat_id,
-            'customer_id' => $customer_id
-        ]);
-        $pending_requests = $stmt->fetch(PDO::FETCH_ASSOC)['pending_requests'];
-        
-        if ($pending_requests > 0) {
-            $error = "You already have a pending preview request for this flat.";
-        } else {
+        try {
+            $pdo->beginTransaction();
+
+            // Validate date
+            $requested_day = date('l', strtotime($preview_date));
+            $is_valid_day = false;
+            foreach ($viewing_times as $time) {
+                if (date('l', strtotime($time['next_date'])) === $requested_day) {
+                    $is_valid_day = true;
+                    break;
+                }
+            }
+            
+            if (!$is_valid_day) {
+                throw new Exception("Invalid preview day selected.");
+            }
+
+            // Check if customer already has a pending request for this flat
+            $stmt = $pdo->prepare("
+                SELECT COUNT(*) as pending_requests 
+                FROM preview_requests pr
+                WHERE pr.flat_id = :flat_id 
+                AND pr.customer_id = :customer_id 
+                AND pr.status = 'pending'
+            ");
+            $stmt->execute([
+                'flat_id' => $flat_id,
+                'customer_id' => $customer_id
+            ]);
+            $pending_requests = $stmt->fetch(PDO::FETCH_ASSOC)['pending_requests'];
+            
+            if ($pending_requests > 0) {
+                throw new Exception("You already have a pending preview request for this flat.");
+            }
+
             // Check if the time slot is already booked
             $stmt = $pdo->prepare("
                 SELECT COUNT(*) as booked_slots
-                FROM preview_requests
-                WHERE flat_id = :flat_id
-                AND requested_date = :requested_date
-                AND requested_time = :requested_time
-                AND status != 'rejected'
+                FROM preview_requests pr
+                WHERE pr.flat_id = :flat_id
+                AND pr.requested_date = :requested_date
+                AND pr.requested_time = :requested_time
+                AND pr.status = 'pending'
             ");
             $stmt->execute([
                 'flat_id' => $flat_id,
@@ -118,80 +136,138 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $booked_slots = $stmt->fetch(PDO::FETCH_ASSOC)['booked_slots'];
             
             if ($booked_slots > 0) {
-                $error = "This time slot is already booked. Please select another time.";
-            } else {
-                // Insert preview request
-                $stmt = $pdo->prepare("
-                    INSERT INTO preview_requests (
-                        flat_id, 
-                        customer_id, 
-                        requested_date,
-                        requested_time,
-                        status
-                    ) VALUES (
-                        :flat_id, 
-                        :customer_id, 
-                        :requested_date,
-                        :requested_time,
-                        'pending'
-                    )
-                ");
-                $stmt->execute([
-                    'flat_id' => $flat_id,
-                    'customer_id' => $customer_id,
-                    'requested_date' => $preview_date,
-                    'requested_time' => $selected_time['time_from']
-                ]);
-                
-                // Notify customer
-                $stmt = $pdo->prepare("
-                    INSERT INTO messages (
-                        receiver_user_id, 
-                        sender_user_id, 
-                        title, 
-                        body, 
-                        is_read
-                    ) VALUES (
-                        :receiver_user_id, 
-                        NULL, 
-                        :title, 
-                        :body, 
-                        0
-                    )
-                ");
-                $stmt->execute([
-                    'receiver_user_id' => $_SESSION['user_id'],
-                    'title' => "Preview Request Submitted",
-                    'body' => "Your preview request for flat {$flat['ref_number']} has been submitted for {$preview_date} at {$selected_time['time_from']}. The owner will contact you to confirm the appointment."
-                ]);
-                
-                // Notify owner
-                $stmt = $pdo->prepare("
-                    INSERT INTO messages (
-                        receiver_user_id, 
-                        sender_user_id, 
-                        title, 
-                        body, 
-                        is_read
-                    ) SELECT 
-                        u.user_id, 
-                        NULL, 
-                        :title, 
-                        :body, 
-                        0 
-                    FROM users u 
-                    JOIN owners o ON u.user_id = o.user_id 
-                    WHERE o.owner_id = :owner_id
-                ");
-                $stmt->execute([
-                    'owner_id' => $flat['owner_id'],
-                    'title' => "New Preview Request",
-                    'body' => "You have a new preview request for flat {$flat['ref_number']} from {$_SESSION['user_name']} for {$preview_date} at {$selected_time['time_from']}."
-                ]);
-                
-                header("Location: flat_detail.php?id=$flat_id&success=preview_requested");
-                exit;
+                throw new Exception("This time slot is already booked. Please select another time.");
             }
+
+            // Insert preview request
+            $stmt = $pdo->prepare("
+                INSERT INTO preview_requests (
+                    flat_id, 
+                    customer_id, 
+                    requested_date,
+                    requested_time,
+                    status
+                ) VALUES (
+                    :flat_id, 
+                    :customer_id, 
+                    :requested_date,
+                    :requested_time,
+                    'pending'
+                )
+            ");
+            $stmt->execute([
+                'flat_id' => $flat_id,
+                'customer_id' => $customer_id,
+                'requested_date' => $preview_date,
+                'requested_time' => $selected_time['time_from']
+            ]);
+            
+            // Get the preview request ID
+            $preview_request_id = $pdo->lastInsertId();
+            
+            // Notify customer
+            $stmt = $pdo->prepare("
+                INSERT INTO messages (
+                    receiver_user_id, 
+                    sender_user_id, 
+                    title, 
+                    body, 
+                    is_read,
+                    message_type,
+                    flat_id,
+                    preview_request_id
+                ) VALUES (
+                    :receiver_user_id, 
+                    NULL, 
+                    :title, 
+                    :body, 
+                    0,
+                    'preview_request',
+                    :flat_id,
+                    :preview_request_id
+                )
+            ");
+            $stmt->execute([
+                'receiver_user_id' => $_SESSION['user_id'],
+                'title' => "Preview Request Submitted",
+                'body' => "Your preview request for flat {$flat['ref_number']} has been submitted for {$preview_date} at {$selected_time['time_from']}. The owner will contact you to confirm the appointment.",
+                'flat_id' => $flat_id,
+                'preview_request_id' => $preview_request_id
+            ]);
+            
+            // Notify owner
+            $stmt = $pdo->prepare("
+                INSERT INTO messages (
+                    receiver_user_id, 
+                    sender_user_id, 
+                    title, 
+                    body, 
+                    is_read,
+                    message_type,
+                    flat_id,
+                    preview_request_id
+                ) SELECT 
+                    u.user_id, 
+                    NULL, 
+                    :title, 
+                    :body, 
+                    0,
+                    'preview_request',
+                    :flat_id,
+                    :preview_request_id
+                FROM users u 
+                JOIN owners o ON u.user_id = o.user_id 
+                WHERE o.owner_id = :owner_id
+            ");
+            $stmt->execute([
+                'owner_id' => $flat['owner_id'],
+                'title' => "New Preview Request",
+                'body' => "You have a new preview request for flat {$flat['ref_number']} from {$_SESSION['user_name']} for {$preview_date} at {$selected_time['time_from']}. Please review and respond to this request.",
+                'flat_id' => $flat_id,
+                'preview_request_id' => $preview_request_id
+            ]);
+
+            // Notify manager
+            $stmt = $pdo->prepare("
+                INSERT INTO messages (
+                    receiver_user_id, 
+                    sender_user_id, 
+                    title, 
+                    body, 
+                    is_read,
+                    message_type,
+                    flat_id,
+                    preview_request_id
+                ) SELECT 
+                    u.user_id, 
+                    NULL, 
+                    :title, 
+                    :body, 
+                    0,
+                    'preview_request',
+                    :flat_id,
+                    :preview_request_id
+                FROM users u 
+                WHERE u.role = 'manager'
+            ");
+            $stmt->execute([
+                'title' => "New Preview Request",
+                'body' => "A new preview request has been submitted for flat {$flat['ref_number']}. " .
+                         "Customer: {$_SESSION['user_name']} ({$_SESSION['user_email']}). " .
+                         "Requested Date: {$preview_date} at {$selected_time['time_from']}. " .
+                         "Owner: {$flat['owner_name']} ({$flat['mobile']}).",
+                'flat_id' => $flat_id,
+                'preview_request_id' => $preview_request_id
+            ]);
+
+            $pdo->commit();
+            header("Location: flat_detail.php?id=$flat_id&success=preview_requested");
+            exit;
+
+        } catch (Exception $e) {
+            $pdo->rollBack();
+            $error = $e->getMessage();
+            error_log("Preview Request Error: " . $e->getMessage());
         }
     }
 }

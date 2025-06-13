@@ -8,7 +8,6 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'owner') {
     exit;
 }
 
-// Get owner_id
 $stmt = $pdo->prepare("SELECT owner_id FROM owners WHERE user_id = :user_id");
 $stmt->execute(['user_id' => $_SESSION['user_id']]);
 $owner = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -21,7 +20,6 @@ $step = $_GET['step'] ?? 1;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($step == 1) {
-        // Validate required fields
         $required_fields = ['location', 'flat_number', 'street_name', 'city', 'postal_code', 
                           'monthly_rent', 'available_from', 'bedrooms', 'bathrooms', 
                           'size_sqm', 'backyard', 'rent_conditions'];
@@ -34,7 +32,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         if (empty($errors)) {
+            $uploaded_photos = [];
+            if (isset($_FILES['photos']) && is_array($_FILES['photos']['tmp_name'])) {
+                $upload_dir = "../assets/images";
+                if (!file_exists($upload_dir)) {
+                    mkdir($upload_dir, 0777, true);
+                }
+
+                foreach ($_FILES['photos']['tmp_name'] as $index => $tmp_name) {
+                    if ($tmp_name && $_FILES['photos']['error'][$index] === UPLOAD_ERR_OK) {
+                        $allowed_types = ['image/jpeg', 'image/png', 'image/gif'];
+                        $file_type = $_FILES['photos']['type'][$index];
+                        
+                        if (!in_array($file_type, $allowed_types)) {
+                            continue;
+                        }
+
+                        $file_extension = strtolower(pathinfo($_FILES['photos']['name'][$index], PATHINFO_EXTENSION));
+                        $file_name = "temp_" . time() . "_" . $index . "." . $file_extension;
+                        $photo_url = "/AhmadEwidat1212596/assets/images/" . $file_name;
+                        $full_path = "../" . $photo_url;
+
+                        if (move_uploaded_file($tmp_name, $full_path)) {
+                            $uploaded_photos[] = $photo_url;
+                        }
+                    }
+                }
+            }
+
             $_SESSION['flat_data'] = $_POST;
+            $_SESSION['flat_photos'] = $uploaded_photos;
             header('Location: offer_flat.php?step=2');
             exit;
         } else {
@@ -48,14 +75,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $_SESSION['flat_data']['viewing_times'] = isset($_POST['viewing_times']) ? $_POST['viewing_times'] : [];
         $data = $_SESSION['flat_data'];
 
-        // Generate unique 6-digit reference number
         do {
             $ref_number = str_pad(rand(0, 999999), 6, '0', STR_PAD_LEFT);
             $stmt = $pdo->prepare("SELECT COUNT(*) FROM flats WHERE ref_number = :ref_number");
             $stmt->execute(['ref_number' => $ref_number]);
         } while ($stmt->fetchColumn() > 0);
 
-        // Insert flat
         $stmt = $pdo->prepare("INSERT INTO flats (owner_id, ref_number, location, flat_number, street_name, city, postal_code, monthly_rent, available_from, available_to, bedrooms, bathrooms, size_sqm, is_furnished, heating, air_conditioning, access_control, parking, backyard, playground, storage, rent_conditions, status) VALUES (:owner_id, :ref_number, :location, :flat_number, :street_name, :city, :postal_code, :monthly_rent, :available_from, :available_to, :bedrooms, :bathrooms, :size_sqm, :is_furnished, :heating, :air_conditioning, :access_control, :parking, :backyard, :playground, :storage, :rent_conditions, 'pending')");
         $stmt->execute([
             'owner_id' => $owner_id,
@@ -83,83 +108,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         ]);
         $flat_id = $pdo->lastInsertId();
 
-        // Insert photos
-        if (isset($_FILES['photos']) && is_array($_FILES['photos']['tmp_name'])) {
-            // إنشاء مجلد uploads إذا لم يكن موجوداً
-            $upload_dir = "../assets/images";
-            if (!file_exists($upload_dir)) {
-                if (!mkdir($upload_dir, 0777, true)) {
-                    error_log("Failed to create directory: " . $upload_dir);
-                    die("Failed to create upload directory");
-                }
+        if (isset($_SESSION['flat_photos']) && is_array($_SESSION['flat_photos'])) {
+            foreach ($_SESSION['flat_photos'] as $photo_url) {
+                $stmt = $pdo->prepare("INSERT INTO flat_photos (flat_id, photo_url) VALUES (:flat_id, :photo_url)");
+                $stmt->execute([
+                    'flat_id' => $flat_id,
+                    'photo_url' => $photo_url
+                ]);
             }
-
-            // التأكد من صلاحيات المجلد
-            if (!is_writable($upload_dir)) {
-                error_log("Directory is not writable: " . $upload_dir);
-                die("Upload directory is not writable");
-            }
-
-            foreach ($_FILES['photos']['tmp_name'] as $index => $tmp_name) {
-                if ($tmp_name && $_FILES['photos']['error'][$index] === UPLOAD_ERR_OK) {
-                    // التحقق من نوع الملف
-                    $allowed_types = ['image/jpeg', 'image/png', 'image/gif'];
-                    $file_type = $_FILES['photos']['type'][$index];
-                    
-                    if (!in_array($file_type, $allowed_types)) {
-                        error_log("Invalid file type: " . $file_type);
-                        continue;
-                    }
-
-                    // إنشاء اسم فريد للملف
-                    $file_extension = strtolower(pathinfo($_FILES['photos']['name'][$index], PATHINFO_EXTENSION));
-                    $file_name = "flat_" . $flat_id . "_" . time() . "_" . $index . "." . $file_extension;
-                    $photo_url = "/AhmadEwidat1212596/assets/images/" . $file_name;
-                    $full_path = "../" . $photo_url;
-
-                    // محاولة نقل الملف
-                    if (move_uploaded_file($tmp_name, $full_path)) {
-                        try {
-                            // التحقق من وجود الصورة في قاعدة البيانات
-                            $check_stmt = $pdo->prepare("SELECT COUNT(*) FROM flat_photos WHERE flat_id = :flat_id AND photo_url = :photo_url");
-                            $check_stmt->execute([
-                                'flat_id' => $flat_id,
-                                'photo_url' => $photo_url
-                            ]);
-                            
-                            if ($check_stmt->fetchColumn() == 0) {
-                                // إضافة الصورة إلى قاعدة البيانات
-                                $stmt = $pdo->prepare("INSERT INTO flat_photos (flat_id, photo_url) VALUES (:flat_id, :photo_url)");
-                                $result = $stmt->execute([
-                                    'flat_id' => $flat_id,
-                                    'photo_url' => $photo_url
-                                ]);
-                                
-                                if (!$result) {
-                                    error_log("Failed to insert photo into database: " . print_r($stmt->errorInfo(), true));
-                                } else {
-                                    error_log("Successfully inserted photo: " . $photo_url);
-                                }
-                            } else {
-                                error_log("Photo already exists in database: " . $photo_url);
-                            }
-                        } catch (PDOException $e) {
-                            error_log("Database error while inserting photo: " . $e->getMessage());
-                        }
-                    } else {
-                        error_log("Failed to move uploaded file to: " . $full_path);
-                        error_log("Upload error details: " . print_r($_FILES['photos']['error'][$index], true));
-                    }
-                } else {
-                    error_log("File upload error: " . $_FILES['photos']['error'][$index]);
-                }
-            }
-        } else {
-            error_log("No photos were uploaded");
-            error_log("FILES array: " . print_r($_FILES, true));
         }
 
-        // Insert marketing info
         if (isset($data['marketing']) && is_array($data['marketing'])) {
             foreach ($data['marketing'] as $info) {
                 if (!empty($info['title']) && !empty($info['description'])) {
@@ -174,7 +132,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
 
-        // Insert viewing times
         if (isset($data['viewing_times']) && is_array($data['viewing_times'])) {
             foreach ($data['viewing_times'] as $time) {
                 if (!empty($time['day_of_week']) && !empty($time['time_from']) && !empty($time['time_to']) && !empty($time['phone_number'])) {
@@ -190,7 +147,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
 
-        // Notify manager
         $stmt = $pdo->prepare("INSERT INTO messages (receiver_user_id, sender_user_id, title, body, is_read) SELECT user_id, :sender_user_id, :title, :body, 0 FROM users WHERE role = 'manager'");
         $stmt->execute([
             'sender_user_id' => $_SESSION['user_id'],
@@ -199,6 +155,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         ]);
 
         unset($_SESSION['flat_data']);
+        unset($_SESSION['flat_photos']);
         echo "<p>Flat submitted successfully! Ref Number: $ref_number. Awaiting manager approval.</p>";
         exit;
     }

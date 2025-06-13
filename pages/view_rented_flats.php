@@ -43,7 +43,9 @@ $query = "SELECT r.*, f.ref_number, f.monthly_rent, f.location, o.name AS owner_
           FROM rents r 
           JOIN flats f ON r.flat_id = f.flat_id 
           JOIN owners o ON f.owner_id = o.owner_id 
-          WHERE r.customer_id = :customer_id OR f.owner_id = :owner_id 
+          WHERE (r.customer_id = :customer_id OR f.owner_id = :owner_id) 
+          AND r.approval_status = 'approved' 
+          AND r.status = 'current'
           ORDER BY r.$sort_column $sort_order";
 $stmt = $pdo->prepare($query);
 $stmt->execute([

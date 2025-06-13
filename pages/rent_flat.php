@@ -63,6 +63,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 FROM rents r 
                 WHERE r.flat_id = :flat_id 
                 AND (
+                    (r.approval_status = 'approved' AND r.status = 'current')
+                    OR (r.approval_status = 'pending')
+                )
+                AND (
                     (r.start_date <= :end_date AND r.end_date >= :start_date)
                     OR (r.start_date BETWEEN :start_date AND :end_date)
                     OR (r.end_date BETWEEN :start_date AND :end_date)
@@ -78,35 +82,54 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($overlapping_rents > 0) {
                 $error = "Flat is not available for the selected period.";
             } else {
-                // Calculate total amount with security deposit
-                $security_deposit = $flat['monthly_rent'];
-                $total_amount = ($flat['monthly_rent'] * $months) + $security_deposit;
-
-                // Store in session for shopping basket
-                $_SESSION['rent_data'] = [
+                // Check for overlapping preview requests
+                $stmt = $pdo->prepare("
+                    SELECT COUNT(*) as overlapping_previews
+                    FROM preview_requests pr
+                    WHERE pr.flat_id = :flat_id
+                    AND pr.status = 'pending'
+                    AND pr.requested_date BETWEEN :start_date AND :end_date
+                ");
+                $stmt->execute([
                     'flat_id' => $flat_id,
-                    'ref_number' => $flat['ref_number'],
-                    'location' => $flat['location'],
-                    'address' => $flat['flat_number'] . ', ' . $flat['street_name'] . ', ' . $flat['city'] . ', ' . $flat['postal_code'],
-                    'owner_name' => $flat['owner_name'],
-                    'owner_id' => $flat['owner_id'],
-                    'monthly_rent' => $flat['monthly_rent'],
                     'start_date' => $start_date,
-                    'end_date' => $end_date,
-                    'months' => $months,
-                    'security_deposit' => $security_deposit,
-                    'total_amount' => $total_amount
-                ];
-                // Add to shopping basket
-                if (!isset($_SESSION['shopping_basket'])) {
-                    $_SESSION['shopping_basket'] = [];
+                    'end_date' => $end_date
+                ]);
+                $overlapping_previews = $stmt->fetch(PDO::FETCH_ASSOC)['overlapping_previews'];
+
+                if ($overlapping_previews > 0) {
+                    $error = "There are pending preview requests during this period.";
+                } else {
+                    // Calculate total amount with security deposit
+                    $security_deposit = $flat['monthly_rent'];
+                    $total_amount = ($flat['monthly_rent'] * $months) + $security_deposit;
+
+                    // Store in session for shopping basket
+                    $_SESSION['rent_data'] = [
+                        'flat_id' => $flat_id,
+                        'ref_number' => $flat['ref_number'],
+                        'location' => $flat['location'],
+                        'address' => $flat['flat_number'] . ', ' . $flat['street_name'] . ', ' . $flat['city'] . ', ' . $flat['postal_code'],
+                        'owner_name' => $flat['owner_name'],
+                        'owner_id' => $flat['owner_id'],
+                        'monthly_rent' => $flat['monthly_rent'],
+                        'start_date' => $start_date,
+                        'end_date' => $end_date,
+                        'months' => $months,
+                        'security_deposit' => $security_deposit,
+                        'total_amount' => $total_amount
+                    ];
+                    // Add to shopping basket
+                    if (!isset($_SESSION['shopping_basket'])) {
+                        $_SESSION['shopping_basket'] = [];
+                    }
+                    $_SESSION['shopping_basket'][$flat_id] = $_SESSION['rent_data'];
+                    header('Location: rent_flat.php?id=' . $flat_id . '&step=2');
+                    exit;
                 }
-                $_SESSION['shopping_basket'][$flat_id] = $_SESSION['rent_data'];
-                header('Location: rent_flat.php?id=' . $flat_id . '&step=2');
-                exit;
             }
         }
-    } elseif ($step == 2) {
+    } else if ($step == 2) {
         $data = $_SESSION['rent_data'];
         
         // Validate payment details
@@ -128,7 +151,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         total_amount,
                         payment_card, 
                         payment_name, 
-                        payment_expiry
+                        payment_expiry,
+                        status,
+                        approval_status
                     ) VALUES (
                         :flat_id, 
                         :customer_id, 
@@ -137,7 +162,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         :total_amount,
                         :payment_card, 
                         :payment_name, 
-                        :payment_expiry
+                        :payment_expiry,
+                        'pending',
+                        'pending'
                     )
                 ");
                 $stmt->execute([
@@ -151,52 +178,110 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'payment_expiry' => $_POST['payment_expiry']
                 ]);
 
+                // Get the rent ID once
+                $rent_id = $pdo->lastInsertId();
+
                 // Notify customer
-                $stmt = $pdo->prepare("
-                    INSERT INTO messages (
-                        receiver_user_id, 
-                        sender_user_id, 
-                        title, 
-                        body, 
-                        is_read
-                    ) VALUES (
-                        :receiver_user_id, 
-                        NULL, 
-                        :title, 
-                        :body, 
-                        0
-                    )
-                ");
-                $stmt->execute([
-                    'receiver_user_id' => $_SESSION['user_id'],
-                    'title' => "Flat Rental Confirmation",
-                    'body' => "Your rental for flat {$flat['ref_number']} is confirmed for the period {$data['start_date']} to {$data['end_date']}. Contact {$flat['owner_name']} at {$flat['mobile']} to collect the keys."
-                ]);
+                // Notify customer
+$stmt = $pdo->prepare("
+INSERT INTO messages (
+    receiver_user_id, 
+    sender_user_id, 
+    title, 
+    body, 
+    is_read,
+    message_type,
+    flat_id,
+    rent_id,
+    status
+) VALUES (
+    :receiver_user_id, 
+    NULL, 
+    :title, 
+    :body, 
+    0,
+    'rent_request',
+    :flat_id,
+    :rent_id,
+    'pending'
+)
+");
+$stmt->execute([
+'receiver_user_id' => $_SESSION['user_id'],
+'title' => "Rental Request Submitted",
+'body' => "Your rental request for flat {$flat['ref_number']} has been submitted for the period {$data['start_date']} to {$data['end_date']}. The owner will review your request and contact you soon.",
+'flat_id' => $flat_id,
+'rent_id' => $rent_id
+]);
 
-                // Notify owner
-                $stmt = $pdo->prepare("
-                    INSERT INTO messages (
-                        receiver_user_id, 
-                        sender_user_id, 
-                        title, 
-                        body, 
-                        is_read
-                    ) SELECT 
-                        u.user_id, 
-                        NULL, 
-                        :title, 
-                        :body, 
-                        0 
-                    FROM users u 
-                    JOIN owners o ON u.user_id = o.user_id 
-                    WHERE o.owner_id = :owner_id
-                ");
-                $stmt->execute([
-                    'owner_id' => $flat['owner_id'],
-                    'title' => "Flat Rental Confirmation",
-                    'body' => "Your flat {$flat['ref_number']} has been rented by {$_SESSION['user_name']} for the period {$data['start_date']} to {$data['end_date']}."
-                ]);
+// Notify owner
+$stmt = $pdo->prepare("
+INSERT INTO messages (
+    receiver_user_id, 
+    sender_user_id, 
+    title, 
+    body, 
+    is_read,
+    message_type,
+    flat_id,
+    rent_id,
+    status
+) SELECT 
+    u.user_id, 
+    NULL, 
+    :title, 
+    :body, 
+    0,
+    'rent_request',
+    :flat_id,
+    :rent_id,
+    'pending'
+FROM users u 
+JOIN owners o ON u.user_id = o.user_id 
+WHERE o.owner_id = :owner_id
+");
+$stmt->execute([
+'owner_id' => $flat['owner_id'],
+'title' => "New Rental Request",
+'body' => "You have a new rental request for flat {$flat['ref_number']} from {$_SESSION['user_name']} for the period {$data['start_date']} to {$data['end_date']}. Please review and respond to this request.",
+'flat_id' => $flat_id,
+'rent_id' => $rent_id
+]);
 
+// Notify manager
+$stmt = $pdo->prepare("
+INSERT INTO messages (
+    receiver_user_id, 
+    sender_user_id, 
+    title, 
+    body, 
+    is_read,
+    message_type,
+    flat_id,
+    rent_id,
+    status
+) SELECT 
+    u.user_id, 
+    NULL, 
+    :title, 
+    :body, 
+    0,
+    'rent_request',
+    :flat_id,
+    :rent_id,
+    'pending'
+FROM users u 
+WHERE u.role = 'manager'
+");
+$stmt->execute([
+'title' => "New Rental Request",
+'body' => "A new rental request has been submitted for flat {$flat['ref_number']}. " .
+          "Customer: {$_SESSION['user_name']} ({$_SESSION['user_email']}). " .
+          "Period: {$data['start_date']} to {$data['end_date']}. " .
+          "Owner: {$flat['owner_name']} ({$flat['mobile']}).",
+'flat_id' => $flat_id,
+'rent_id' => $rent_id
+]);
                 // Commit transaction
                 $pdo->commit();
 
@@ -204,13 +289,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 unset($_SESSION['shopping_basket'][$flat_id]);
                 unset($_SESSION['rent_data']);
 
-                header("Location: flat_detail.php?id=$flat_id&success=rent_confirmed");
+                header("Location: flat_detail.php?id=$flat_id&success=rent_requested");
                 exit;
             } catch (Exception $e) {
                 // Rollback transaction on error
                 $pdo->rollBack();
-                $error = "An error occurred while processing your request. Please try again.";
-                // Log the error for debugging
+                $error = "An error occurred while processing your request: " . $e->getMessage();
                 error_log("Rent Error: " . $e->getMessage());
             }
         }

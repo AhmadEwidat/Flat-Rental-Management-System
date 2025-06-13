@@ -82,14 +82,25 @@ $flats = $stmt->fetchAll(PDO::FETCH_ASSOC);
             <table>
                 <thead>
                     <tr>
-                        <th class="sortable <?php echo $sort_column === 'location' ? strtolower($sort_order) : ''; ?>">
-                            <a href="?<?php echo http_build_query(array_merge($_GET, ['sort' => 'location', 'order' => $sort_column === 'location' && $sort_order === 'ASC' ? 'DESC' : 'ASC'])); ?>">
-                                Location
+                        <th>Photo</th>
+                        <th class="sortable <?php echo $sort_column === 'ref_number' ? strtolower($sort_order) : ''; ?>">
+                            <a href="?<?php echo http_build_query(array_merge($_GET, ['sort' => 'ref_number', 'order' => $sort_column === 'ref_number' && $sort_order === 'ASC' ? 'DESC' : 'ASC'])); ?>">
+                                Reference Number
                             </a>
                         </th>
                         <th class="sortable <?php echo $sort_column === 'monthly_rent' ? strtolower($sort_order) : ''; ?>">
                             <a href="?<?php echo http_build_query(array_merge($_GET, ['sort' => 'monthly_rent', 'order' => $sort_column === 'monthly_rent' && $sort_order === 'ASC' ? 'DESC' : 'ASC'])); ?>">
-                                Rent
+                                Monthly Rent
+                            </a>
+                        </th>
+                        <th class="sortable <?php echo $sort_column === 'available_from' ? strtolower($sort_order) : ''; ?>">
+                            <a href="?<?php echo http_build_query(array_merge($_GET, ['sort' => 'available_from', 'order' => $sort_column === 'available_from' && $sort_order === 'ASC' ? 'DESC' : 'ASC'])); ?>">
+                                Available From
+                            </a>
+                        </th>
+                        <th class="sortable <?php echo $sort_column === 'location' ? strtolower($sort_order) : ''; ?>">
+                            <a href="?<?php echo http_build_query(array_merge($_GET, ['sort' => 'location', 'order' => $sort_column === 'location' && $sort_order === 'ASC' ? 'DESC' : 'ASC'])); ?>">
+                                Location
                             </a>
                         </th>
                         <th class="sortable <?php echo $sort_column === 'bedrooms' ? strtolower($sort_order) : ''; ?>">
@@ -97,32 +108,27 @@ $flats = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                 Bedrooms
                             </a>
                         </th>
-                        <th class="sortable <?php echo $sort_column === 'bathrooms' ? strtolower($sort_order) : ''; ?>">
-                            <a href="?<?php echo http_build_query(array_merge($_GET, ['sort' => 'bathrooms', 'order' => $sort_column === 'bathrooms' && $sort_order === 'ASC' ? 'DESC' : 'ASC'])); ?>">
-                                Bathrooms
-                            </a>
-                        </th>
-                        <th class="sortable <?php echo $sort_column === 'size_sqm' ? strtolower($sort_order) : ''; ?>">
-                            <a href="?<?php echo http_build_query(array_merge($_GET, ['sort' => 'size_sqm', 'order' => $sort_column === 'size_sqm' && $sort_order === 'ASC' ? 'DESC' : 'ASC'])); ?>">
-                                Size (sqm)
-                            </a>
-                        </th>
-                        <th>Owner</th>
-                        <th>Furnished</th>
-                        <th>Action</th>
                     </tr>
                 </thead>
                 <tbody>
                     <?php foreach ($flats as $flat): ?>
                         <tr>
-                            <td><?php echo htmlspecialchars($flat['location']); ?></td>
+                            <td class="text-center">
+                                <a href="flat_detail.php?id=<?php echo $flat['flat_id']; ?>" target="_blank">
+                                    <img src="<?php echo !empty($flat['photo_url']) ? htmlspecialchars($flat['photo_url']) : '../assets/images/no-image.jpg'; ?>" 
+                                         alt="Flat <?php echo htmlspecialchars($flat['ref_number']); ?>" 
+                                         class="flat-thumbnail">
+                                </a>
+                            </td>
+                            <td class="text-center">
+                                <a href="flat_detail.php?id=<?php echo $flat['flat_id']; ?>" target="_blank" class="flat-ref-button">
+                                    <?php echo htmlspecialchars($flat['ref_number']); ?>
+                                </a>
+                            </td>
                             <td class="text-right">$<?php echo number_format($flat['monthly_rent'], 2); ?></td>
+                            <td class="text-center"><?php echo date('Y-m-d', strtotime($flat['available_from'])); ?></td>
+                            <td><?php echo htmlspecialchars($flat['location']); ?></td>
                             <td class="text-center"><?php echo $flat['bedrooms']; ?></td>
-                            <td class="text-center"><?php echo $flat['bathrooms']; ?></td>
-                            <td class="text-right"><?php echo $flat['size_sqm']; ?></td>
-                            <td><a href="user_card.php?id=<?php echo $flat['owner_id']; ?>" target="_blank"><?php echo htmlspecialchars($flat['owner_name']); ?></a></td>
-                            <td class="text-center"><?php echo $flat['is_furnished'] ? 'Yes' : 'No'; ?></td>
-                            <td class="text-center"><a href="flat_detail.php?id=<?php echo $flat['flat_id']; ?>" class="flat-ref-button"><?php echo htmlspecialchars($flat['ref_number']); ?></a></td>
                         </tr>
                     <?php endforeach; ?>
                 </tbody>

@@ -1,5 +1,5 @@
 <?php
-session_start();
+
 require_once '../includes/dbconfig.inc.php';
 require_once '../includes/header.php';
 require_once '../includes/nav.php';
@@ -10,51 +10,44 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'customer') {
     exit;
 }
 
-$customer_id = $_SESSION['user_id'];
-
 // Handle remove from basket
-if (isset($_POST['remove']) && isset($_POST['rent_id'])) {
-    $stmt = $pdo->prepare("DELETE FROM rents WHERE rent_id = ? AND customer_id = ?");
-    $stmt->execute([$_POST['rent_id'], $customer_id]);
+if (isset($_POST['remove']) && isset($_POST['flat_id'])) {
+    unset($_SESSION['shopping_basket'][$_POST['flat_id']]);
+    header("Location: shopping_basket.php");
+    exit;
 }
 
-// Get rented flats
-$stmt = $pdo->prepare("
-    SELECT r.*, f.*, o.name as owner_name
-    FROM rents r
-    JOIN flats f ON r.flat_id = f.flat_id
-    JOIN owners o ON f.owner_id = o.owner_id
-    WHERE r.customer_id = ? AND r.created_at > DATE_SUB(NOW(), INTERVAL 24 HOUR)
-    ORDER BY r.created_at DESC
-");
-$stmt->execute([$customer_id]);
-$rented_flats = $stmt->fetchAll(PDO::FETCH_ASSOC);
+// Get items from shopping basket
+$basket_items = $_SESSION['shopping_basket'] ?? [];
 
 // Calculate total
 $total = 0;
-foreach ($rented_flats as $flat) {
-    $total += $flat['price'];
+foreach ($basket_items as $item) {
+    $total += $item['total_amount'];
 }
 ?>
 
 <main>
     <h1>Shopping Basket</h1>
 
-    <?php if (empty($rented_flats)): ?>
+    <?php if (empty($basket_items)): ?>
         <p>Your basket is empty.</p>
     <?php else: ?>
         <div class="basket-items">
-            <?php foreach ($rented_flats as $flat): ?>
+            <?php foreach ($basket_items as $flat_id => $item): ?>
                 <div class="basket-item">
                     <div class="flat-info">
-                        <h3><?php echo htmlspecialchars($flat['title']); ?></h3>
-                        <p><strong>Location:</strong> <?php echo htmlspecialchars($flat['location']); ?></p>
-                        <p><strong>Price:</strong> $<?php echo number_format($flat['price'], 2); ?></p>
-                        <p><strong>Owner:</strong> <?php echo htmlspecialchars($flat['owner_name']); ?></p>
-                        <p><strong>Added to basket:</strong> <?php echo date('Y-m-d H:i', strtotime($flat['created_at'])); ?></p>
+                        <h3>Flat <?php echo htmlspecialchars($item['ref_number']); ?></h3>
+                        <p><strong>Location:</strong> <?php echo htmlspecialchars($item['location']); ?></p>
+                        <p><strong>Monthly Rent:</strong> $<?php echo number_format($item['monthly_rent'], 2); ?></p>
+                        <p><strong>Period:</strong> <?php echo date('Y-m-d', strtotime($item['start_date'])); ?> to <?php echo date('Y-m-d', strtotime($item['end_date'])); ?></p>
+                        <p><strong>Duration:</strong> <?php echo $item['months']; ?> months</p>
+                        <p><strong>Security Deposit:</strong> $<?php echo number_format($item['security_deposit'], 2); ?></p>
+                        <p><strong>Total Amount:</strong> $<?php echo number_format($item['total_amount'], 2); ?></p>
+                        <p><strong>Owner:</strong> <?php echo htmlspecialchars($item['owner_name']); ?></p>
                     </div>
                     <form method="POST" class="remove-form">
-                        <input type="hidden" name="rent_id" value="<?php echo $flat['rent_id']; ?>">
+                        <input type="hidden" name="flat_id" value="<?php echo $flat_id; ?>">
                         <button type="submit" name="remove" class="remove-button">Remove</button>
                     </form>
                 </div>
@@ -63,7 +56,7 @@ foreach ($rented_flats as $flat) {
             <div class="basket-summary">
                 <h3>Total: $<?php echo number_format($total, 2); ?></h3>
                 <p class="note">Note: Items in your basket will expire after 24 hours.</p>
-                <button class="checkout-button">Proceed to Checkout</button>
+                <a href="checkout.php" class="checkout-button">Proceed to Checkout</a>
             </div>
         </div>
     <?php endif; ?>

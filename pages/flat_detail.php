@@ -38,6 +38,11 @@ $stmt = $pdo->prepare("SELECT * FROM marketing_info WHERE flat_id = :flat_id");
 $stmt->execute(['flat_id' => $flat_id]);
 $marketing_info = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
+// Get the title for marketing info
+$stmt = $pdo->prepare("SELECT title FROM marketing_info WHERE flat_id = :flat_id LIMIT 1");
+$stmt->execute(['flat_id' => $flat_id]);
+$marketing_title = $stmt->fetch(PDO::FETCH_ASSOC)['title'] ?? 'Nearby Places';
+
 // Get viewing times
 $stmt = $pdo->prepare("SELECT * FROM viewing_times WHERE flat_id = :flat_id ORDER BY day_of_week, time_from");
 $stmt->execute(['flat_id' => $flat_id]);
@@ -84,7 +89,7 @@ if ($is_customer) {
 ?>
 
 <main>
-    <div class="flat-details">
+    <div class="flatcard">
         <!-- Flat Photos -->
         <div class="flat-photos">
             <?php if (empty($photos)): ?>
@@ -114,11 +119,15 @@ if ($is_customer) {
                 <?php else: ?>
                     <span class="status unavailable">Not Available</span>
                 <?php endif; ?>
-                <?php if ($flat['pending_requests'] > 0): ?>
-                    <span class="status pending"><?php echo $flat['pending_requests']; ?> Pending Requests</span>
-                <?php endif; ?>
             </div>
 
+            <!-- Address -->
+            <div class="address-info">
+                <h3>Address</h3>
+                <p><?php echo htmlspecialchars($flat['flat_number'] . ', ' . $flat['street_name'] . ', ' . $flat['city'] . ', ' . $flat['postal_code']); ?></p>
+            </div>
+
+            <!-- Price and Basic Info -->
             <div class="flat-info-grid">
                 <div class="info-item">
                     <strong>Price:</strong>
@@ -138,17 +147,6 @@ if ($is_customer) {
                 </div>
             </div>
 
-            <div class="address-info">
-                <h3>Location</h3>
-                <p><?php echo htmlspecialchars($flat['flat_number'] . ', ' . $flat['street_name'] . ', ' . $flat['city'] . ', ' . $flat['postal_code']); ?></p>
-            </div>
-
-            <div class="availability-info">
-                <h3>Availability</h3>
-                <p><strong>From:</strong> <?php echo date('F j, Y', strtotime($flat['available_from'])); ?></p>
-                <p><strong>To:</strong> <?php echo date('F j, Y', strtotime($flat['available_to'])); ?></p>
-            </div>
-            
             <!-- Features -->
             <div class="features">
                 <h3>Features</h3>
@@ -164,66 +162,43 @@ if ($is_customer) {
                 </ul>
             </div>
 
-            <!-- Marketing Information -->
-            <?php if (!empty($marketing_info)): ?>
-                <div class="marketing-info">
-                    <h3>Nearby Places</h3>
-                    <ul>
-                        <?php foreach ($marketing_info as $info): ?>
-                            <li>
-                                <strong><?php echo htmlspecialchars($info['place_name']); ?></strong>
-                                <p><?php echo htmlspecialchars($info['description']); ?></p>
-                                <?php if ($info['link']): ?>
-                                    <a href="<?php echo htmlspecialchars($info['link']); ?>" target="_blank" rel="noopener noreferrer">More Info</a>
-                                <?php endif; ?>
-                            </li>
-                        <?php endforeach; ?>
-                    </ul>
-                </div>
-            <?php endif; ?>
-
-            <!-- Viewing Times -->
-            <?php if (!empty($viewing_times)): ?>
-                <div class="viewing-times">
-                    <h3>Available Viewing Times</h3>
-                    <ul>
-                        <?php foreach ($viewing_times as $time): ?>
-                            <li>
-                                <strong><?php echo htmlspecialchars($time['day_of_week']); ?></strong>
-                                <span><?php echo date('g:i A', strtotime($time['time_from'])); ?> - 
-                                      <?php echo date('g:i A', strtotime($time['time_to'])); ?></span>
-                            </li>
-                        <?php endforeach; ?>
-                    </ul>
-                </div>
-            <?php endif; ?>
-
-            <!-- Owner Information -->
-            <div class="owner-info">
-                <h3>Contact Owner</h3>
-                <p><strong>Name:</strong> <?php echo htmlspecialchars($flat['owner_name']); ?></p>
-                <p><strong>Phone:</strong> <?php echo htmlspecialchars($flat['mobile']); ?></p>
-                <p><strong>Email:</strong> <?php echo htmlspecialchars($flat['email']); ?></p>
+            <!-- Availability -->
+            <div class="availability-info">
+                <h3>Availability</h3>
+                <p><strong>From:</strong> <?php echo date('F j, Y', strtotime($flat['available_from'])); ?></p>
+                <p><strong>To:</strong> <?php echo date('F j, Y', strtotime($flat['available_to'])); ?></p>
             </div>
 
-            <!-- Actions -->
-            <div class="actions">
-                <?php if ($is_available): ?>
-                    <?php if ($is_customer): ?>
-                        <?php if ($has_pending_request): ?>
-                            <p class="status-message">You have a pending preview request for this flat.</p>
-                        <?php else: ?>
-                            <a href="request_preview.php?id=<?php echo $flat_id; ?>" class="btn btn-primary">Request Viewing</a>
-                            <a href="rent_flat.php?id=<?php echo $flat_id; ?>" class="btn btn-secondary">Rent This Flat</a>
-                        <?php endif; ?>
-                    <?php else: ?>
-                        <p class="login-message">Please <a href="login.php">login</a> as a customer to request a viewing or rent this flat.</p>
-                    <?php endif; ?>
-                <?php else: ?>
-                    <p class="status-message">This flat is no longer available for viewing or renting.</p>
-                <?php endif; ?>
+            <!-- Side Navigation -->
+            <div class="side-nav">
+                <ul>
+                    <li>
+                        <a href="request_preview.php?id=<?php echo $flat_id; ?>">Request Flat Viewing Appointment</a>
+                    </li>
+                    <li>
+                        <a href="rent_flat.php?id=<?php echo $flat_id; ?>">Rent the Flat</a>
+                    </li>
+                </ul>
             </div>
         </div>
+
+        <!-- Marketing Information -->
+        <?php if (!empty($marketing_info)): ?>
+            <div class="marketing-info">
+                <h3><?php echo htmlspecialchars($marketing_title); ?></h3>
+                <ul>
+                    <?php foreach ($marketing_info as $info): ?>
+                        <li>
+                            <strong><?php echo htmlspecialchars($info['name'] ?? ''); ?></strong>
+                            <p><?php echo htmlspecialchars($info['description'] ?? ''); ?></p>
+                            <?php if (!empty($info['url'])): ?>
+                                <a href="<?php echo htmlspecialchars($info['url']); ?>" target="_blank" rel="noopener noreferrer">More Info</a>
+                            <?php endif; ?>
+                        </li>
+                    <?php endforeach; ?>
+                </ul>
+            </div>
+        <?php endif; ?>
     </div>
 </main>
 

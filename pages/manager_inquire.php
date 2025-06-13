@@ -16,7 +16,7 @@ $next_order = $sort_order === 'ASC' ? 'DESC' : 'ASC';
 setcookie('sort_column', $sort_column, time() + (7 * 24 * 60 * 60), '/');
 setcookie('sort_order', $sort_order, time() + (7 * 24 * 60 * 60), '/');
 
-$valid_columns = ['ref_number', 'monthly_rent', 'start_date', 'end_date', 'location', 'owner_name', 'customer_name'];
+$valid_columns = ['ref_number', 'flat.monthly_rent', 'start_date', 'end_date', 'location', 'owner_name', 'customer_name'];
 $sort_column = in_array($sort_column, $valid_columns) ? $sort_column : 'start_date';
 
 $filters = [
