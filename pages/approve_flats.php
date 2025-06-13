@@ -13,19 +13,53 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'];
     $status = $action === 'approve' ? 'approved' : 'rejected';
     
-    // Update flat status
-    $stmt = $pdo->prepare("UPDATE flats SET status = :status WHERE flat_id = :flat_id");
-    $stmt->execute(['status' => $status, 'flat_id' => $flat_id]);
+    // Get flat details first
+    $stmt = $pdo->prepare("SELECT f.*, o.name AS owner_name FROM flats f JOIN owners o ON f.owner_id = o.owner_id WHERE f.flat_id = :flat_id");
+    $stmt->execute(['flat_id' => $flat_id]);
+    $flat = $stmt->fetch(PDO::FETCH_ASSOC);
     
-    // Notify owner
-    $stmt = $pdo->prepare("INSERT INTO messages (receiver_user_id, sender_user_id, title, body, is_read) SELECT u.user_id, NULL, :title, :body, 0 FROM users u JOIN owners o ON u.user_id = o.user_id JOIN flats f ON o.owner_id = f.owner_id WHERE f.flat_id = :flat_id");
-    $stmt->execute([
-        'flat_id' => $flat_id,
-        'title' => "Flat Approval Status",
-        'body' => "Your flat (Ref: {$flat['ref_number']}) has been $status."
-    ]);
-    
-    echo "<p>Flat $status successfully.</p>";
+    if ($flat) {
+        // Update flat status
+        $stmt = $pdo->prepare("UPDATE flats SET status = :status WHERE flat_id = :flat_id");
+        $stmt->execute(['status' => $status, 'flat_id' => $flat_id]);
+        
+        // Notify owner
+        $stmt = $pdo->prepare("
+            INSERT INTO messages (
+                receiver_user_id, 
+                sender_user_id, 
+                title, 
+                body, 
+                is_read,
+                message_type,
+                flat_id,
+                status
+            ) 
+            SELECT 
+                u.user_id, 
+                NULL, 
+                :title, 
+                :body, 
+                0,
+                'flat_approval',
+                :flat_id,
+                :status
+            FROM users u 
+            JOIN owners o ON u.user_id = o.user_id 
+            WHERE o.owner_id = :owner_id
+        ");
+        $stmt->execute([
+            'flat_id' => $flat_id,
+            'owner_id' => $flat['owner_id'],
+            'title' => "Flat Approval Status",
+            'body' => "Your flat (Ref: {$flat['ref_number']}) has been $status.",
+            'status' => $status
+        ]);
+        
+        echo "<p>Flat $status successfully.</p>";
+    } else {
+        echo "<p>Error: Flat not found.</p>";
+    }
 }
 
 // Fetch pending flats

@@ -44,15 +44,13 @@ if (!$flat) {
 
 // Get available viewing times for the next 7 days
 $stmt = $pdo->prepare("
-    SELECT vt.*, 
-           DATE_ADD(CURDATE(), INTERVAL (DAYOFWEEK(vt.day_of_week) - DAYOFWEEK(CURDATE()) + 7) % 7 DAY) as next_date
-    FROM viewing_times vt 
-    WHERE vt.flat_id = :flat_id 
-    AND (
-        (vt.day_of_week = DAYNAME(NOW()) AND vt.time_from > TIME(NOW()))
-        OR vt.day_of_week != DAYNAME(NOW())
-    )
-    ORDER BY next_date, vt.time_from
+    SELECT vts.*, vt.phone_number
+    FROM viewing_time_slots vts
+    JOIN viewing_times vt ON vts.viewing_time_id = vt.id
+    WHERE vts.flat_id = :flat_id 
+    AND vts.slot_date >= CURDATE()
+    AND vts.status = 'available'
+    ORDER BY vts.slot_date, vts.slot_time
     LIMIT 7
 ");
 $stmt->execute(['flat_id' => $flat_id]);
@@ -67,39 +65,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         die("Invalid request.");
     }
 
-    $viewing_time_id = $_POST['viewing_time_id'];
-    $preview_date = $_POST['preview_date'];
+    $slot_id = $_POST['slot_id'];
     
-    // Validate viewing time
-    $valid_time = false;
-    $selected_time = null;
-    foreach ($viewing_times as $time) {
-        if ($time['id'] == $viewing_time_id) {
-            $valid_time = true;
-            $selected_time = $time;
+    // Validate slot
+    $valid_slot = false;
+    $selected_slot = null;
+    foreach ($viewing_times as $slot) {
+        if ($slot['slot_id'] == $slot_id) {
+            $valid_slot = true;
+            $selected_slot = $slot;
             break;
         }
     }
     
-    if (!$valid_time) {
+    if (!$valid_slot) {
         $error = "Invalid viewing time selected.";
     } else {
         try {
             $pdo->beginTransaction();
-
-            // Validate date
-            $requested_day = date('l', strtotime($preview_date));
-            $is_valid_day = false;
-            foreach ($viewing_times as $time) {
-                if (date('l', strtotime($time['next_date'])) === $requested_day) {
-                    $is_valid_day = true;
-                    break;
-                }
-            }
-            
-            if (!$is_valid_day) {
-                throw new Exception("Invalid preview day selected.");
-            }
 
             // Check if customer already has a pending request for this flat
             $stmt = $pdo->prepare("
@@ -119,26 +102,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new Exception("You already have a pending preview request for this flat.");
             }
 
-            // Check if the time slot is already booked
-            $stmt = $pdo->prepare("
-                SELECT COUNT(*) as booked_slots
-                FROM preview_requests pr
-                WHERE pr.flat_id = :flat_id
-                AND pr.requested_date = :requested_date
-                AND pr.requested_time = :requested_time
-                AND pr.status = 'pending'
-            ");
-            $stmt->execute([
-                'flat_id' => $flat_id,
-                'requested_date' => $preview_date,
-                'requested_time' => $selected_time['time_from']
-            ]);
-            $booked_slots = $stmt->fetch(PDO::FETCH_ASSOC)['booked_slots'];
-            
-            if ($booked_slots > 0) {
-                throw new Exception("This time slot is already booked. Please select another time.");
-            }
-
             // Insert preview request
             $stmt = $pdo->prepare("
                 INSERT INTO preview_requests (
@@ -146,25 +109,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     customer_id, 
                     requested_date,
                     requested_time,
+                    slot_id,
                     status
                 ) VALUES (
                     :flat_id, 
                     :customer_id, 
                     :requested_date,
                     :requested_time,
+                    :slot_id,
                     'pending'
                 )
             ");
             $stmt->execute([
                 'flat_id' => $flat_id,
                 'customer_id' => $customer_id,
-                'requested_date' => $preview_date,
-                'requested_time' => $selected_time['time_from']
+                'requested_date' => $selected_slot['slot_date'],
+                'requested_time' => $selected_slot['slot_time'],
+                'slot_id' => $selected_slot['slot_id']
             ]);
             
             // Get the preview request ID
             $preview_request_id = $pdo->lastInsertId();
-            
+
+            // Update slot status
+            $stmt = $pdo->prepare("
+                UPDATE viewing_time_slots 
+                SET status = 'booked',
+                    preview_request_id = :preview_request_id
+                WHERE slot_id = :slot_id
+            ");
+            $stmt->execute([
+                'slot_id' => $selected_slot['slot_id'],
+                'preview_request_id' => $preview_request_id
+            ]);
+
             // Notify customer
             $stmt = $pdo->prepare("
                 INSERT INTO messages (
@@ -190,7 +168,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt->execute([
                 'receiver_user_id' => $_SESSION['user_id'],
                 'title' => "Preview Request Submitted",
-                'body' => "Your preview request for flat {$flat['ref_number']} has been submitted for {$preview_date} at {$selected_time['time_from']}. The owner will contact you to confirm the appointment.",
+                'body' => "Your preview request for flat {$flat['ref_number']} has been submitted for {$selected_slot['slot_date']} at {$selected_slot['slot_time']}. The owner will contact you to confirm the appointment.",
                 'flat_id' => $flat_id,
                 'preview_request_id' => $preview_request_id
             ]);
@@ -222,7 +200,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt->execute([
                 'owner_id' => $flat['owner_id'],
                 'title' => "New Preview Request",
-                'body' => "You have a new preview request for flat {$flat['ref_number']} from {$_SESSION['user_name']} for {$preview_date} at {$selected_time['time_from']}. Please review and respond to this request.",
+                'body' => "You have a new preview request for flat {$flat['ref_number']} from {$_SESSION['user_name']} for {$selected_slot['slot_date']} at {$selected_slot['slot_time']}. Please review and respond to this request.",
                 'flat_id' => $flat_id,
                 'preview_request_id' => $preview_request_id
             ]);
@@ -254,7 +232,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'title' => "New Preview Request",
                 'body' => "A new preview request has been submitted for flat {$flat['ref_number']}. " .
                          "Customer: {$_SESSION['user_name']} ({$_SESSION['user_email']}). " .
-                         "Requested Date: {$preview_date} at {$selected_time['time_from']}. " .
+                         "Requested Date: {$selected_slot['slot_date']} at {$selected_slot['slot_time']}. " .
                          "Owner: {$flat['owner_name']} ({$flat['mobile']}).",
                 'flat_id' => $flat_id,
                 'preview_request_id' => $preview_request_id
@@ -300,24 +278,22 @@ if (!isset($_SESSION['csrf_token'])) {
         <div class="viewing-times">
             <?php 
             $current_date = null;
-            foreach ($viewing_times as $time): 
-                if ($current_date !== $time['next_date']):
+            foreach ($viewing_times as $slot): 
+                if ($current_date !== $slot['slot_date']):
                     if ($current_date !== null) echo '</div>'; // Close previous day's div
-                    $current_date = $time['next_date'];
+                    $current_date = $slot['slot_date'];
             ?>
                 <div class="day-slot">
-                    <h4><?php echo date('l, F j, Y', strtotime($time['next_date'])); ?></h4>
+                    <h4><?php echo date('l, F j, Y', strtotime($slot['slot_date'])); ?></h4>
                     <div class="time-slots">
             <?php endif; ?>
                         <div class="time-slot">
                             <form method="POST" onsubmit="return confirm('Are you sure you want to book this viewing time?');">
                                 <input type="hidden" name="csrf_token" value="<?php echo $_SESSION['csrf_token']; ?>">
-                                <input type="hidden" name="viewing_time_id" value="<?php echo $time['id']; ?>">
-                                <input type="hidden" name="preview_date" value="<?php echo $time['next_date']; ?>">
+                                <input type="hidden" name="slot_id" value="<?php echo $slot['slot_id']; ?>">
                                 <div class="time-info">
-                                    <span class="time"><?php echo date('g:i A', strtotime($time['time_from'])); ?> - 
-                                    <?php echo date('g:i A', strtotime($time['time_to'])); ?></span>
-                                    <span class="contact">Contact: <?php echo htmlspecialchars($time['phone_number']); ?></span>
+                                    <span class="time"><?php echo date('g:i A', strtotime($slot['slot_time'])); ?></span>
+                                    <span class="contact">Contact: <?php echo htmlspecialchars($slot['phone_number']); ?></span>
                                 </div>
                                 <button type="submit" class="btn btn-primary">Book This Time</button>
                             </form>

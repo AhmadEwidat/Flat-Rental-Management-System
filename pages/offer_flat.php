@@ -18,11 +18,15 @@ $owner_id = $owner['owner_id'];
 
 $step = $_GET['step'] ?? 1;
 
+if (isset($error_message)) {
+    echo '<div class="error-message">' . $error_message . '</div>';
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($step == 1) {
         $required_fields = ['location', 'flat_number', 'street_name', 'city', 'postal_code', 
                           'monthly_rent', 'available_from', 'bedrooms', 'bathrooms', 
-                          'size_sqm', 'backyard', 'rent_conditions'];
+                          'size_sqm', 'backyard', 'rent_conditions', 'marketing_count', 'viewing_count'];
         
         $errors = [];
         foreach ($required_fields as $field) {
@@ -34,9 +38,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (empty($errors)) {
             $uploaded_photos = [];
             if (isset($_FILES['photos']) && is_array($_FILES['photos']['tmp_name'])) {
-                $upload_dir = "../assets/images";
+                $upload_dir = $_SERVER['DOCUMENT_ROOT'] . "/AhmadEwidat1212596/assets/images/flats";
+                
                 if (!file_exists($upload_dir)) {
-                    mkdir($upload_dir, 0777, true);
+              
+                        $errors[] = "Failed to create flats directory";
+                        error_log("Failed to create flats directory: " . $upload_dir);
+                    
+                }
+
+                if (!is_writable($upload_dir)) {
+                    $errors[] = "Upload directory is not writable";
+                    error_log("Upload directory is not writable: " . $upload_dir);
                 }
 
                 foreach ($_FILES['photos']['tmp_name'] as $index => $tmp_name) {
@@ -45,25 +58,47 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $file_type = $_FILES['photos']['type'][$index];
                         
                         if (!in_array($file_type, $allowed_types)) {
+                            $errors[] = "Invalid file type for photo " . ($index + 1) . ". Only JPG, PNG and GIF are allowed.";
                             continue;
                         }
 
                         $file_extension = strtolower(pathinfo($_FILES['photos']['name'][$index], PATHINFO_EXTENSION));
-                        $file_name = "temp_" . time() . "_" . $index . "." . $file_extension;
-                        $photo_url = "/AhmadEwidat1212596/assets/images/" . $file_name;
-                        $full_path = "../" . $photo_url;
+                        $file_name = "flat_" . time() . "_" . uniqid() . "." . $file_extension;
+                        
+                        $photo_url = "/AhmadEwidat1212596/assets/images/flats/" . $file_name;
+                        
+                        $full_path = $upload_dir . "/" . $file_name;
 
+                        error_log("Attempting to upload file to: " . $full_path);
+                        
                         if (move_uploaded_file($tmp_name, $full_path)) {
                             $uploaded_photos[] = $photo_url;
+                            error_log("File uploaded successfully: " . $file_name);
+                        } else {
+                            $error = error_get_last();
+                            $errors[] = "Failed to upload photo " . ($index + 1) . ". Error: " . ($error ? $error['message'] : 'Unknown error');
+                            error_log("Upload failed for file: " . $file_name . ". Error: " . ($error ? $error['message'] : 'Unknown error'));
                         }
+                    } else {
+                        $errors[] = "Error uploading photo " . ($index + 1) . ". Error code: " . $_FILES['photos']['error'][$index];
                     }
                 }
             }
 
-            $_SESSION['flat_data'] = $_POST;
-            $_SESSION['flat_photos'] = $uploaded_photos;
-            header('Location: offer_flat.php?step=2');
-            exit;
+            if (empty($uploaded_photos)) {
+                $errors[] = "At least one photo is required";
+            }
+
+            if (empty($errors)) {
+                $_SESSION['flat_data'] = $_POST;
+                $_SESSION['flat_photos'] = $uploaded_photos;
+                $_SESSION['marketing_count'] = (int)$_POST['marketing_count'];
+                $_SESSION['viewing_count'] = (int)$_POST['viewing_count'];
+                header('Location: offer_flat.php?step=2');
+                exit;
+            } else {
+                $error_message = implode("<br>", $errors);
+            }
         } else {
             $error_message = implode("<br>", $errors);
         }
@@ -164,49 +199,137 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 <main>
     <?php if ($step == 1): ?>
-        <form method="POST" action="offer_flat.php?step=1" enctype="multipart/form-data">
-            <label>Location<input type="text" name="location" required></label>
-            <label>Flat Number<input type="text" name="flat_number" required></label>
-            <label>Street Name<input type="text" name="street_name" required></label>
-            <label>City<input type="text" name="city" required></label>
-            <label>Postal Code<input type="text" name="postal_code" required></label>
-            <label>Monthly Rent<input type="number" name="monthly_rent" required></label>
-            <label>Available From<input type="date" name="available_from" required></label>
-            <label>Available To<input type="date" name="available_to"></label>
-            <label>Bedrooms<input type="number" name="bedrooms" required></label>
-            <label>Bathrooms<input type="number" name="bathrooms" required></label>
-            <label>Size (sqm)<input type="number" name="size_sqm" required></label>
-            <label><input type="checkbox" name="is_furnished"> Furnished</label>
-            <label><input type="checkbox" name="heating"> Heating</label>
-            <label><input type="checkbox" name="air_conditioning"> Air Conditioning</label>
-            <label><input type="checkbox" name="access_control"> Access Control</label>
-            <label><input type="checkbox" name="parking"> Parking</label>
-            <label>Backyard<select name="backyard" required>
-                <option value="none">None</option>
-                <option value="individual">Individual</option>
-                <option value="shared">Shared</option>
-            </select></label>
-            <label><input type="checkbox" name="playground"> Playground</label>
-            <label><input type="checkbox" name="storage"> Storage</label>
-            <label>Rental Conditions<textarea name="rent_conditions" required></textarea></label>
-            <label>Photos<input type="file" name="photos[]" multiple accept="image/*" required></label>
-            <button type="submit">Next</button>
+        <form method="POST" action="offer_flat.php?step=1" enctype="multipart/form-data" class="flat-form">
+            <div class="form-section">
+                <h2>Basic Information</h2>
+                <div class="form-group">
+                    <label for="location">Location</label>
+                    <input type="text" id="location" name="location" required>
+                </div>
+                <div class="form-group">
+                    <label for="flat_number">Flat Number</label>
+                    <input type="text" id="flat_number" name="flat_number" required>
+                </div>
+                <div class="form-group">
+                    <label for="street_name">Street Name</label>
+                    <input type="text" id="street_name" name="street_name" required>
+                </div>
+                <div class="form-group">
+                    <label for="city">City</label>
+                    <input type="text" id="city" name="city" required>
+                </div>
+                <div class="form-group">
+                    <label for="postal_code">Postal Code</label>
+                    <input type="text" id="postal_code" name="postal_code" required>
+                </div>
+            </div>
+
+            <div class="form-section">
+                <h2>Rental Details</h2>
+                <div class="form-group">
+                    <label for="monthly_rent">Monthly Rent</label>
+                    <input type="number" id="monthly_rent" name="monthly_rent" required min="0">
+                </div>
+                <div class="form-group">
+                    <label for="available_from">Available From</label>
+                    <input type="date" id="available_from" name="available_from" required>
+                </div>
+                <div class="form-group">
+                    <label for="available_to">Available To (Optional)</label>
+                    <input type="date" id="available_to" name="available_to">
+                </div>
+            </div>
+
+            <div class="form-section">
+                <h2>Flat Specifications</h2>
+                <div class="form-group">
+                    <label for="bedrooms">Bedrooms</label>
+                    <input type="number" id="bedrooms" name="bedrooms" required min="0">
+                </div>
+                <div class="form-group">
+                    <label for="bathrooms">Bathrooms</label>
+                    <input type="number" id="bathrooms" name="bathrooms" required min="0">
+                </div>
+                <div class="form-group">
+                    <label for="size_sqm">Size (sqm)</label>
+                    <input type="number" id="size_sqm" name="size_sqm" required min="0">
+                </div>
+            </div>
+
+            <div class="form-section">
+                <h2>Amenities</h2>
+                <div class="checkbox-group">
+                    <label><input type="checkbox" name="is_furnished"> Furnished</label>
+                    <label><input type="checkbox" name="heating"> Heating</label>
+                    <label><input type="checkbox" name="air_conditioning"> Air Conditioning</label>
+                    <label><input type="checkbox" name="access_control"> Access Control</label>
+                    <label><input type="checkbox" name="parking"> Parking</label>
+                    <label><input type="checkbox" name="playground"> Playground</label>
+                    <label><input type="checkbox" name="storage"> Storage</label>
+                </div>
+                <div class="form-group">
+                    <label for="backyard">Backyard</label>
+                    <select id="backyard" name="backyard" required>
+                        <option value="none">None</option>
+                        <option value="individual">Individual</option>
+                        <option value="shared">Shared</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="form-section">
+                <h2>Additional Information</h2>
+                <div class="form-group">
+                    <label for="rent_conditions">Rental Conditions</label>
+                    <textarea id="rent_conditions" name="rent_conditions" required rows="4"></textarea>
+                </div>
+            </div>
+
+            <div class="form-section">
+                <h2>Photos</h2>
+                <div class="form-group">
+                    <label for="photos">Upload Photos (JPG, PNG, or GIF)</label>
+                    <input type="file" id="photos" name="photos[]" multiple accept="image/jpeg,image/png,image/gif" required>
+                    <small>You can select multiple photos. At least one photo is required.</small>
+                </div>
+            </div>
+
+            <div class="form-section">
+                <h2>Additional Settings</h2>
+                <div class="form-group">
+                    <label for="marketing_count">Number of Marketing Information Fields</label>
+                    <input type="number" id="marketing_count" name="marketing_count" min="0" max="5" value="1" required>
+                    <small>How many marketing information fields do you want to add? (0-5)</small>
+                </div>
+                <div class="form-group">
+                    <label for="viewing_count">Number of Viewing Time Fields</label>
+                    <input type="number" id="viewing_count" name="viewing_count" min="1" max="7" value="1" required>
+                    <small>How many viewing time slots do you want to add? (1-7)</small>
+                </div>
+            </div>
+
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary">Next</button>
+            </div>
         </form>
     <?php elseif ($step == 2): ?>
         <form method="POST" action="offer_flat.php?step=2">
             <h3>Add Marketing Information (Optional)</h3>
+            <?php for ($i = 0; $i < $_SESSION['marketing_count']; $i++): ?>
             <div class="marketing-info">
-                <label>Title<input type="text" name="marketing[0][title]"></label>
-                <label>Description<textarea name="marketing[0][description]"></textarea></label>
-                <label>URL<input type="url" name="marketing[0][url]"></label>
+                <label>Title<input type="text" name="marketing[<?php echo $i; ?>][title]"></label>
+                <label>Description<textarea name="marketing[<?php echo $i; ?>][description]"></textarea></label>
+                <label>URL<input type="url" name="marketing[<?php echo $i; ?>][url]"></label>
             </div>
+            <?php endfor; ?>
             <button type="submit">Next</button>
         </form>
     <?php elseif ($step == 3): ?>
         <form method="POST" action="offer_flat.php?step=3">
             <h3>Add Viewing Times</h3>
+            <?php for ($i = 0; $i < $_SESSION['viewing_count']; $i++): ?>
             <div class="viewing-time">
-                <label>Day<select name="viewing_times[0][day_of_week]" required>
+                <label>Day<select name="viewing_times[<?php echo $i; ?>][day_of_week]" required>
                     <option value="">Select Day</option>
                     <option value="Monday">Monday</option>
                     <option value="Tuesday">Tuesday</option>
@@ -216,10 +339,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <option value="Saturday">Saturday</option>
                     <option value="Sunday">Sunday</option>
                 </select></label>
-                <label>From<input type="time" name="viewing_times[0][time_from]" required></label>
-                <label>To<input type="time" name="viewing_times[0][time_to]" required></label>
-                <label>Contact Number<input type="tel" name="viewing_times[0][phone_number]" required></label>
+                <label>From<input type="time" name="viewing_times[<?php echo $i; ?>][time_from]" required></label>
+                <label>To<input type="time" name="viewing_times[<?php echo $i; ?>][time_to]" required></label>
+                <label>Contact Number<input type="tel" name="viewing_times[<?php echo $i; ?>][phone_number]" required></label>
             </div>
+            <?php endfor; ?>
             <button type="submit">Submit</button>
         </form>
     <?php endif; ?>

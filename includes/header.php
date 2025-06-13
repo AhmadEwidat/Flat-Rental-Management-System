@@ -21,10 +21,24 @@ if (session_status() === PHP_SESSION_NONE) {
             </a>
         </div>
         <div>
-            <a href="/AhmadEwidat1212596/pages/about_us.php">About Us</a>
+         
             <?php if (isset($_SESSION['user_id'])): ?>
                 <div class="user-card">
-                    <img src="/AhmadEwidat1212596/assets/images/user_photo.png" alt="User Photo">
+                    <?php
+                    // جلب صورة المستخدم من قاعدة البيانات
+                    $stmt = $pdo->prepare("SELECT photo FROM users WHERE user_id = ?");
+                    $stmt->execute([$_SESSION['user_id']]);
+                    $user_photo = $stmt->fetchColumn();
+                    
+                    // إذا لم يكن هناك صورة، استخدم الصورة الافتراضية
+                    if (!$user_photo) {
+                        $user_photo = "/AhmadEwidat1212596/assets/images/user_photo.png";
+                    } elseif (!str_starts_with($user_photo, 'http://') && !str_starts_with($user_photo, 'https://')) {
+                        // إضافة الرابط الكامل إذا كان المسار نسبي
+                        $user_photo = "http://" . $_SERVER['HTTP_HOST'] . $user_photo;
+                    }
+                    ?>
+                    <img src="<?php echo htmlspecialchars($user_photo); ?>" alt="User Photo">
                     <span><?php echo htmlspecialchars($_SESSION['user_name']); ?></span>
                     <a href="/AhmadEwidat1212596/pages/profile.php">Profile</a>
                 </div>
@@ -47,5 +61,6 @@ if (session_status() === PHP_SESSION_NONE) {
                 <a class="head" href="/AhmadEwidat1212596/pages/login.php">Login</a>
                 <a class="head" href="/AhmadEwidat1212596/pages/signup.php" class="signup-link">Sign Up</a>
             <?php endif; ?>
+            <a href="/AhmadEwidat1212596/pages/about_us.php">About Us</a>
         </div>
     </header>

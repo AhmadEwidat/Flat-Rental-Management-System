@@ -32,6 +32,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['message_id']) && isse
             'message_id' => $message_id,
             'status' => $action
         ]);
+
+        // Update preview request status if it's a preview request
+        if ($original_message['message_type'] === 'preview_request' && $original_message['preview_request_id']) {
+            $stmt = $pdo->prepare("
+                UPDATE preview_requests 
+                SET status = :status
+                WHERE id = :preview_request_id
+            ");
+            $stmt->execute([
+                'preview_request_id' => $original_message['preview_request_id'],
+                'status' => $action
+            ]);
+
+            // Update all related messages for this preview request
+            $stmt = $pdo->prepare("
+                UPDATE messages 
+                SET status = :status
+                WHERE preview_request_id = :preview_request_id
+            ");
+            $stmt->execute([
+                'preview_request_id' => $original_message['preview_request_id'],
+                'status' => $action
+            ]);
+        }
         
         // Update rent status if it's a rent request
         if ($original_message['message_type'] === 'rent_request' && $original_message['rent_id']) {

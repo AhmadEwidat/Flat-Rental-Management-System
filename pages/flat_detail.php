@@ -66,25 +66,50 @@ if (isset($_SESSION['user_id'])) {
     }
 }
 
-// Check if flat is available for the current period
-$current_date = date('Y-m-d');
-$is_available = strtotime($flat['available_to']) >= strtotime($current_date);
+// Get current and future rents for this flat
+$stmt = $pdo->prepare("
+    SELECT r.start_date, r.end_date, r.status, r.approval_status,
+           c.name as customer_name, c.mobile as customer_mobile
+    FROM rents r
+    JOIN customers c ON r.customer_id = c.customer_id
+    WHERE r.flat_id = :flat_id 
+    AND r.approval_status = 'approved'
+    AND r.end_date >= CURDATE()
+    ORDER BY r.start_date ASC
+");
+$stmt->execute(['flat_id' => $flat_id]);
+$current_rents = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// Check if user has a pending preview request
-$has_pending_request = false;
-if ($is_customer) {
-    $stmt = $pdo->prepare("
-        SELECT COUNT(*) as pending_count 
-        FROM preview_requests 
-        WHERE flat_id = :flat_id 
-        AND customer_id = :customer_id 
-        AND status = 'pending'
-    ");
-    $stmt->execute([
-        'flat_id' => $flat_id,
-        'customer_id' => $customer_id
-    ]);
-    $has_pending_request = $stmt->fetch(PDO::FETCH_ASSOC)['pending_count'] > 0;
+// Calculate available periods
+$available_periods = [];
+$current_date = new DateTime($flat['available_from']);
+$end_date = new DateTime($flat['available_to']);
+
+if (empty($current_rents)) {
+    $available_periods[] = [
+        'start' => $flat['available_from'],
+        'end' => $flat['available_to']
+    ];
+} else {
+    foreach ($current_rents as $rent) {
+        $rent_start = new DateTime($rent['start_date']);
+        $rent_end = new DateTime($rent['end_date']);
+        
+        if ($current_date < $rent_start) {
+            $available_periods[] = [
+                'start' => $current_date->format('Y-m-d'),
+                'end' => $rent_start->modify('-1 day')->format('Y-m-d')
+            ];
+        }
+        $current_date = $rent_end->modify('+1 day');
+    }
+    
+    if ($current_date <= $end_date) {
+        $available_periods[] = [
+            'start' => $current_date->format('Y-m-d'),
+            'end' => $end_date->format('Y-m-d')
+        ];
+    }
 }
 ?>
 
@@ -114,7 +139,7 @@ if ($is_customer) {
             <h2><?php echo htmlspecialchars($flat['ref_number']); ?> - <?php echo htmlspecialchars($flat['location']); ?></h2>
             
             <div class="flat-status">
-                <?php if ($is_available): ?>
+                <?php if (!empty($available_periods)): ?>
                     <span class="status available">Available</span>
                 <?php else: ?>
                     <span class="status unavailable">Not Available</span>
@@ -165,8 +190,48 @@ if ($is_customer) {
             <!-- Availability -->
             <div class="availability-info">
                 <h3>Availability</h3>
-                <p><strong>From:</strong> <?php echo date('F j, Y', strtotime($flat['available_from'])); ?></p>
-                <p><strong>To:</strong> <?php echo date('F j, Y', strtotime($flat['available_to'])); ?></p>
+                <?php if (empty($available_periods)): ?>
+                    <p class="not-available">This flat is currently not available for new bookings.</p>
+                <?php else: ?>
+                    <div class="available-periods">
+                        <h4>Available Periods:</h4>
+                        <ul>
+                            <?php foreach ($available_periods as $period): ?>
+                                <li>
+                                    <?php 
+                                    echo date('F j, Y', strtotime($period['start'])) . ' to ' . 
+                                         date('F j, Y', strtotime($period['end']));
+                                    ?>
+                                </li>
+                            <?php endforeach; ?>
+                        </ul>
+                    </div>
+                <?php endif; ?>
+
+                <?php if (!empty($current_rents)): ?>
+                    <div class="current-rents">
+                        <h4>Current Bookings:</h4>
+                        <ul>
+                            <?php foreach ($current_rents as $rent): ?>
+                                <li>
+                                    <strong>Period:</strong> 
+                                    <?php 
+                                    echo date('F j, Y', strtotime($rent['start_date'])) . ' to ' . 
+                                         date('F j, Y', strtotime($rent['end_date']));
+                                    ?>
+                                    <br>
+                                    <strong>Status:</strong> <?php echo ucfirst($rent['status']); ?>
+                                    <?php if ($_SESSION['role'] === 'owner' || $_SESSION['role'] === 'manager'): ?>
+                                        <br>
+                                        <strong>Rented by:</strong> <?php echo htmlspecialchars($rent['customer_name']); ?>
+                                        <br>
+                                        <strong>Contact:</strong> <?php echo htmlspecialchars($rent['customer_mobile']); ?>
+                                    <?php endif; ?>
+                                </li>
+                            <?php endforeach; ?>
+                        </ul>
+                    </div>
+                <?php endif; ?>
             </div>
 
             <!-- Side Navigation -->
@@ -175,9 +240,11 @@ if ($is_customer) {
                     <li>
                         <a href="request_preview.php?id=<?php echo $flat_id; ?>">Request Flat Viewing Appointment</a>
                     </li>
-                    <li>
-                        <a href="rent_flat.php?id=<?php echo $flat_id; ?>">Rent the Flat</a>
-                    </li>
+                    <?php if (!empty($available_periods)): ?>
+                        <li>
+                            <a href="rent_flat.php?id=<?php echo $flat_id; ?>">Rent the Flat</a>
+                        </li>
+                    <?php endif; ?>
                 </ul>
             </div>
         </div>

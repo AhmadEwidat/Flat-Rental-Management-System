@@ -3,7 +3,6 @@ require_once '../includes/dbconfig.inc.php';
 require_once '../includes/header.php';
 require_once '../includes/nav.php';
 
-// Check if user is logged in
 if (!isset($_SESSION['user_id'])) {
     header("Location: login.php");
     exit;
@@ -12,7 +11,6 @@ if (!isset($_SESSION['user_id'])) {
 $user_id = $_SESSION['user_id'];
 $role = $_SESSION['role'];
 
-// Get user information based on role
 if ($role === 'customer') {
     $stmt = $pdo->prepare("
         SELECT c.*, u.email 
@@ -31,12 +29,41 @@ if ($role === 'customer') {
 $stmt->execute([$user_id]);
 $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
-// Handle form submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
         $pdo->beginTransaction();
 
-        // Update user information based on role
+        if (isset($_FILES['profile_photo']) && $_FILES['profile_photo']['error'] === UPLOAD_ERR_OK) {
+            $upload_dir = "../assets/images/profiles";
+            
+            if (!file_exists($upload_dir)) {
+                if (!mkdir($upload_dir, 0777, true)) {
+                    throw new Exception("Failed to create profiles directory");
+                }
+            }
+
+            $allowed_types = ['image/jpeg', 'image/png', 'image/gif'];
+            $file_type = $_FILES['profile_photo']['type'];
+            
+            if (!in_array($file_type, $allowed_types)) {
+                throw new Exception("Invalid file type. Only JPG, PNG and GIF are allowed.");
+            }
+
+            $file_extension = strtolower(pathinfo($_FILES['profile_photo']['name'], PATHINFO_EXTENSION));
+            $file_name = "profile_" . $user_id . "_" . time() . "." . $file_extension;
+            
+            $photo_url = "/AhmadEwidat1212596/assets/images/profiles/" . $file_name;
+            
+            $full_path = $upload_dir . "/" . $file_name;
+
+            if (!move_uploaded_file($_FILES['profile_photo']['tmp_name'], $full_path)) {
+                throw new Exception("Failed to upload profile photo.");
+            }
+
+            $stmt = $pdo->prepare("UPDATE users SET photo = ? WHERE user_id = ?");
+            $stmt->execute([$photo_url, $user_id]);
+        }
+
         if ($role === 'customer') {
             $stmt = $pdo->prepare("
                 UPDATE customers 
@@ -77,13 +104,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ]);
         }
 
-        // Update email if changed
         if ($_POST['email'] !== $user['email']) {
             $stmt = $pdo->prepare("UPDATE users SET email = ? WHERE user_id = ?");
             $stmt->execute([$_POST['email'], $user_id]);
         }
 
-        // Update password if provided
         if (!empty($_POST['new_password'])) {
             if (!preg_match('/^\d.*[a-z]$/', $_POST['new_password']) || 
                 strlen($_POST['new_password']) < 6 || 
@@ -100,17 +125,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $pdo->commit();
         $success = "Profile updated successfully";
         
-        // Refresh user data
+        if ($role === 'customer') {
+            $stmt = $pdo->prepare("
+                SELECT c.*, u.email, u.photo 
+                FROM customers c 
+                JOIN users u ON c.user_id = u.user_id 
+                WHERE c.user_id = ?
+            ");
+        } else {
+            $stmt = $pdo->prepare("
+                SELECT o.*, u.email, u.photo 
+                FROM owners o 
+                JOIN users u ON o.user_id = u.user_id 
+                WHERE o.user_id = ?
+            ");
+        }
         $stmt->execute([$user_id]);
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
+        
     } catch (Exception $e) {
-        $pdo->rollBack();
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
         $error = $e->getMessage();
+    }
+}
+
+$stmt = $pdo->prepare("SELECT photo FROM users WHERE user_id = ?");
+$stmt->execute([$user_id]);
+$user_photo = $stmt->fetchColumn();
+
+if ($user_photo) {
+    $base_url = "http://" . $_SERVER['HTTP_HOST'];
+    if (!str_starts_with($user_photo, 'http://') && !str_starts_with($user_photo, 'https://')) {
+        $user_photo = $base_url . $user_photo;
     }
 }
 ?>
 
-<main>
+<main class="<?php echo $role; ?>">
     <h1>Profile</h1>
     
     <?php if (isset($success)): ?>
@@ -121,7 +174,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <div class="error-message"><?php echo htmlspecialchars($error); ?></div>
     <?php endif; ?>
 
-    <form method="POST" class="profile-form">
+    <form method="POST" class="profile-form" enctype="multipart/form-data">
+        <div class="profile-photo-section">
+            <div class="current-photo">
+                <?php if ($user_photo): ?>
+                    <img src="<?php echo htmlspecialchars($user_photo); ?>" alt="Profile Photo" class="profile-photo">
+                <?php else: ?>
+                    <div class="no-photo">No Photo</div>
+                <?php endif; ?>
+            </div>
+            <div class="form-group">
+                <label for="profile_photo">Change Profile Photo</label>
+                <input type="file" id="profile_photo" name="profile_photo" accept="image/jpeg,image/png,image/gif">
+                <small>Allowed formats: JPG, PNG, GIF. Max size: 2MB</small>
+            </div>
+        </div>
+
         <div class="form-group">
             <label for="name" class="required">Full Name</label>
             <input type="text" id="name" name="name" required 

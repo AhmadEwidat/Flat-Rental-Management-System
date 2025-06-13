@@ -10,15 +10,25 @@ $max_price = $_GET['max_price'] ?? '';
 $bedrooms = $_GET['bedrooms'] ?? '';
 $sort = $_GET['sort'] ?? 'price_asc';
 
-// Get flats with their first image
+// Get flats with their first image and available dates
 $query = "
     SELECT f.flat_id, f.location, f.flat_number, f.street_name, f.city, 
            f.monthly_rent, f.bedrooms, f.bathrooms, f.size_sqm,
+           f.available_from, f.available_to,
            o.name as owner_name,
-           (SELECT photo_url FROM flat_photos WHERE flat_id = f.flat_id LIMIT 1) as photo_url
+           (SELECT photo_url FROM flat_photos WHERE flat_id = f.flat_id LIMIT 1) as photo_url,
+           GROUP_CONCAT(
+               CONCAT(r.start_date, ' to ', r.end_date)
+               ORDER BY r.start_date
+               SEPARATOR '|'
+           ) as booked_periods
     FROM flats f
     JOIN owners o ON f.owner_id = o.owner_id
+    LEFT JOIN rents r ON f.flat_id = r.flat_id 
+        AND r.approval_status = 'approved' 
+        AND r.status = 'current'
     WHERE f.status = 'approved'
+    GROUP BY f.flat_id
     ORDER BY f.monthly_rent ASC
 ";
 
@@ -33,6 +43,55 @@ $locations = $stmt->fetchAll(PDO::FETCH_COLUMN);
 // Get unique bedroom counts for filter
 $stmt = $pdo->query("SELECT DISTINCT bedrooms FROM flats WHERE status = 'approved' ORDER BY bedrooms");
 $bedroom_counts = $stmt->fetchAll(PDO::FETCH_COLUMN);
+
+// Function to get available periods
+function getAvailablePeriods($available_from, $available_to, $booked_periods) {
+    $available_periods = [];
+    $current_date = new DateTime($available_from);
+    $end_date = new DateTime($available_to);
+    
+    if (empty($booked_periods)) {
+        return [[
+            'start' => $available_from,
+            'end' => $available_to
+        ]];
+    }
+    
+    $booked_ranges = [];
+    foreach (explode('|', $booked_periods) as $period) {
+        list($start, $end) = explode(' to ', $period);
+        $booked_ranges[] = [
+            'start' => new DateTime($start),
+            'end' => new DateTime($end)
+        ];
+    }
+    
+    // Sort booked ranges by start date
+    usort($booked_ranges, function($a, $b) {
+        return $a['start'] <=> $b['start'];
+    });
+    
+    // Find available periods
+    foreach ($booked_ranges as $booked) {
+        if ($current_date < $booked['start']) {
+            $available_periods[] = [
+                'start' => $current_date->format('Y-m-d'),
+                'end' => $booked['start']->modify('-1 day')->format('Y-m-d')
+            ];
+        }
+        $current_date = $booked['end']->modify('+1 day');
+    }
+    
+    // Add final period if there's time left
+    if ($current_date <= $end_date) {
+        $available_periods[] = [
+            'start' => $current_date->format('Y-m-d'),
+            'end' => $end_date->format('Y-m-d')
+        ];
+    }
+    
+    return $available_periods;
+}
 ?>
 
 <main>
@@ -129,6 +188,32 @@ $bedroom_counts = $stmt->fetchAll(PDO::FETCH_COLUMN);
                         <div class="location">
                             <p><?php echo htmlspecialchars($flat['street_name'] . ', ' . $flat['city']); ?></p>
                         </div>
+                        
+                        <div class="availability">
+                            <h4>Available Periods:</h4>
+                            <?php 
+                            $available_periods = getAvailablePeriods(
+                                $flat['available_from'], 
+                                $flat['available_to'], 
+                                $flat['booked_periods']
+                            );
+                            if (empty($available_periods)): 
+                            ?>
+                                <p class="not-available">Currently not available for new bookings</p>
+                            <?php else: ?>
+                                <ul class="available-periods">
+                                    <?php foreach ($available_periods as $period): ?>
+                                        <li>
+                                            <?php 
+                                            echo date('M d, Y', strtotime($period['start'])) . ' to ' . 
+                                                 date('M d, Y', strtotime($period['end']));
+                                            ?>
+                                        </li>
+                                    <?php endforeach; ?>
+                                </ul>
+                            <?php endif; ?>
+                        </div>
+                        
                         <a href="flat_detail.php?id=<?php echo $flat['flat_id']; ?>" class="view-button">View Details</a>
                     </div>
                 </div>
